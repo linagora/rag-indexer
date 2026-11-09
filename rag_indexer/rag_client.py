@@ -76,8 +76,14 @@ async def get_producer_file(session: aiohttp.ClientSession, msg: IndexMessage, d
         raise
     except asyncio.TimeoutError as e:
         raise TransientError(f"Timeout fetching file_url: {e}") from e
+    except aiohttp.InvalidURL as e:
+        # Its message is the URL itself, secret included: never put it in the error.
+        raise FatalError("Invalid file_url") from e
     except aiohttp.ClientError as e:
         raise TransientError(f"Network error fetching file_url: {e}") from e
+    except OSError as e:
+        # Writing the temporary file (disk full): the next attempt may succeed.
+        raise TransientError(f"Cannot store the file_url download: {e}") from e
 
 
 # Marker of the 409 openRAG answers when another file of the partition already
