@@ -222,3 +222,26 @@ async def test_publish_to_dlq_skips_callback_without_doc_rev():
 
     assert session.post_call is None
     assert len(channel.default_exchange.published) == 1
+
+
+@pytest.mark.asyncio
+async def test_drain_status_callbacks_waits_for_pending_posts():
+    """A shutdown must not drop a status callback still in flight."""
+    posted = []
+
+    class _SlowResp(_FakeCallbackResp):
+        async def __aenter__(self):
+            await asyncio.sleep(0.05)
+            posted.append(True)
+            return self
+
+    class _SlowSession(_FakeCallbackSession):
+        def post(self, url, json=None, headers=None, timeout=None):
+            return _SlowResp()
+
+    metadata = {"partition": "p1", "file_id": "f1", "doc_rev": "3-abc", "callback_url": "https://cozy.example/cb"}
+    transport.send_status_callback(_SlowSession(), metadata, "error")
+    assert posted == []
+
+    await transport.drain_status_callbacks()
+    assert posted == [True]

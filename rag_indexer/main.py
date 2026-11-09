@@ -25,6 +25,7 @@ from rag_indexer.transport import (
     publish_to_retry,
     publish_to_dlq,
     send_status_callback,
+    drain_status_callbacks,
     start_health_server,
     shutdown_event,
     request_shutdown,
@@ -170,6 +171,8 @@ async def main():
             else:
                 log.info("drain_complete", detail="no in-flight tasks")
 
+            # The messages are acked or in the DLQ already: their status would be lost.
+            await drain_status_callbacks()
             await session.close()
             await health_runner.cleanup()
             log.info("shutdown_complete")
