@@ -10,7 +10,7 @@ from rag_indexer.rag_client import (
     metadata_dict,
     rag_upsert,
 )
-from rag_indexer.errors import TransientError
+from rag_indexer.errors import TransientError, UnsupportedError
 from tests.conftest import FakeContextResp, FakeSession
 
 
@@ -302,3 +302,11 @@ async def test_rag_upsert_other_409_is_retried(detail):
     session = _CapturingSession(status=409, text=json.dumps({"detail": detail}))
     with pytest.raises(TransientError):
         await rag_upsert(session, _upsert_msg(), is_new=True)
+
+
+@pytest.mark.asyncio
+async def test_rag_upsert_415_is_unsupported():
+    """openRAG refuses the format for good: reported as such, not as a failure."""
+    session = _CapturingSession(status=415, text='{"detail": "Unsupported file format: xyz"}')
+    with pytest.raises(UnsupportedError):
+        await rag_upsert(session, _upsert_msg(name="doc.xyz"), is_new=True)
