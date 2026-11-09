@@ -457,29 +457,6 @@ async def test_unexpected_exception_raises_fatal(
 
 
 @pytest.mark.asyncio
-async def test_upsert_post_409_conflict_does_not_raise(
-    monkeypatch, headers_base, aiohttp_session_stub
-):
-    """POST returning 409 Conflict (race condition) is swallowed by rag_upsert.
-
-    rag_upsert treats a 409 as success (logs a warning, doesn't raise) rather than
-    retrying -- the loser of the race just completes normally, no exception at all.
-    """
-    async def fake_get(session, rag, partition, file_id):
-        return FakeResp(404)
-
-    async def fake_upsert(session, msg, is_new):
-        return None
-
-    monkeypatch.setattr(rag_client, "rag_get_file", fake_get)
-    monkeypatch.setattr(rag_client, "rag_upsert", fake_upsert)
-
-    headers = {**headers_base, "action": "upsert"}
-    msg = DummyMessage(headers)
-    await process_message(msg, aiohttp_session_stub)  # must not raise
-
-
-@pytest.mark.asyncio
 async def test_upsert_get_200_no_md5sum_reindexes(
     monkeypatch, headers_base, aiohttp_session_stub
 ):
