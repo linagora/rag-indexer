@@ -53,20 +53,9 @@ async def start_health_server(connection, host="0.0.0.0", port=8080):
 
 
 def _file_metadata(metadata: dict) -> dict:
-    """File metadata echoed to the cozy callback.
-
-    Narrowed to what cozy's handler actually reads (metadata.doc_rev) plus
-    datetime/doctype for readability -- see callback_metadata().
-    """
-    return rag_client.callback_metadata(
-        rag_client.metadata_dict(
-            doc_rev=metadata.get("doc_rev"),
-            md5sum=metadata.get("md5sum"),
-            datetime=metadata.get("datetime"),
-            doctype=metadata.get("doctype"),
-            app_metadata=metadata.get("app_metadata"),
-        )
-    )
+    """File metadata echoed to the cozy callback: cozy reads doc_rev, the rest is
+    for readability. Never anything else, secrets included."""
+    return {field: metadata.get(field) or "" for field in ("doc_rev", "datetime", "doctype")}
 
 
 # Fire-and-forget status-callback POSTs, tracked so asyncio doesn't garbage-collect

@@ -17,44 +17,16 @@ async def _await_dlq_callbacks() -> None:
     await asyncio.gather(*transport._callback_tasks)
 
 
-def test_file_metadata_narrows_to_what_cozy_reads():
-    """The DLQ failure callback is narrowed to doc_rev/datetime/doctype -- what
-    cozy's handler reads plus readability fields -- and drops everything else,
-    notably secrets. OpenRAG's own success callback is not this narrow: it echoes
-    every metadata key except its server-computed ones (UPLOAD_METADATA_SERVER_KEYS),
-    so it also carries md5sum and app_metadata.
-    """
-    meta = {
-        "doc_rev": "3-abc",
+def test_file_metadata_keeps_only_what_cozy_reads():
+    """doc_rev/datetime/doctype only: no md5sum standing in for doc_rev, no secrets."""
+    result = _file_metadata({
         "md5sum": "abc123",
         "datetime": "2026-01-15T12:00:00Z",
         "doctype": "io.cozy.files",
-        "app_metadata": {"custom": "value"},
-        # sensitive fields that must never be echoed back:
-        "callback_url": "https://cozy.example/cb",
+        "callback_token": "cozy-secret-token",
         "rag": {"api_key": "secret"},
-    }
-
-    result = _file_metadata(meta)
-
-    assert result == {
-        "doc_rev": "3-abc",
-        "datetime": "2026-01-15T12:00:00Z",
-        "doctype": "io.cozy.files",
-    }
-
-
-def test_file_metadata_never_substitutes_md5sum_for_doc_rev():
-    """cozy-stack answers 400 on an empty doc_rev, but silently drops a status
-    whose doc_rev is not a revision -- a rejection is the safer of the two.
-    """
-    result = _file_metadata({"md5sum": "abc123"})
-    assert result["doc_rev"] == ""
-
-
-def test_file_metadata_app_metadata_cannot_override_doc_rev():
-    result = _file_metadata({"doc_rev": "3-abc", "app_metadata": {"doc_rev": "9-forged"}})
-    assert result["doc_rev"] == "3-abc"
+    })
+    assert result == {"doc_rev": "", "datetime": "2026-01-15T12:00:00Z", "doctype": "io.cozy.files"}
 
 
 # ------------------------
@@ -201,14 +173,6 @@ async def test_publish_to_dlq_reads_callback_token_from_body():
     await _await_dlq_callbacks()
 
     assert session.post_call["headers"] == {"Authorization": "Bearer tok-from-body"}
-
-
-@pytest.mark.asyncio
-async def test_publish_to_dlq_callback_token_not_echoed_in_payload_metadata():
-    """_file_metadata must not echo the token back to cozy-stack."""
-    result = _file_metadata({"doc_rev": "3-abc", "callback_token": "cozy-secret-token"})
-    assert "callback_token" not in result
-    assert "cozy-secret-token" not in str(result)
 
 
 @pytest.mark.asyncio
