@@ -71,8 +71,7 @@ CONCURRENCY = int(os.getenv("CONCURRENCY", "1"))
 _HTTP_TIMEOUT_SECONDS = int(os.getenv("HTTP_TIMEOUT", "60"))
 HTTP_TIMEOUT = aiohttp.ClientTimeout(total=_HTTP_TIMEOUT_SECONDS)
 
-# Short, dedicated timeout for the best-effort failure callback: it must never
-# block the DLQ path or the shutdown drain on a slow/unreachable cozy webhook.
+# Short, so the shutdown drain never hangs on a slow or unreachable cozy webhook.
 _CALLBACK_TIMEOUT_SECONDS = int(os.getenv("CALLBACK_TIMEOUT", "5"))
 CALLBACK_TIMEOUT = aiohttp.ClientTimeout(total=_CALLBACK_TIMEOUT_SECONDS)
 

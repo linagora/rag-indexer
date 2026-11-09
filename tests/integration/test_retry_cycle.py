@@ -202,8 +202,7 @@ async def test_dlq_failed_callback_is_posted(rmq_channel):
 
         async with aiohttp.ClientSession() as session:
             await publish_to_dlq(channel, msg, session)
-            # The failure callback is now a detached fire-and-forget task: let it
-            # finish while the session is still open, before this `with` closes it.
+            # The callback is a detached task: let it finish before the session closes.
             await asyncio.gather(*transport._callback_tasks)
         await msg.ack()
 

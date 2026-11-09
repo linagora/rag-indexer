@@ -32,7 +32,6 @@ from rag_indexer.transport import (
 
 
 async def main():
-    """Entry point: connect to RabbitMQ, declare topology, and start the consumer loop."""
     setup_logging()
     log = structlog.get_logger()
 

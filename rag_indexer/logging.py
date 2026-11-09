@@ -17,13 +17,12 @@ SENSITIVE_KEYS = frozenset({
     "secret",
 })
 
-# Keys whose value is a URL that may carry secrets in the path or query string;
-# see _redact_url for what's kept.
+# URLs whose path or query may carry a secret (the cozy download secret, say).
 URL_KEYS = frozenset({"file_url", "callback_url"})
 
 
 def _redact_url(value):
-    """Keep scheme://host; redact the path/query which may carry secrets."""
+    """Keep only scheme://host."""
     if not isinstance(value, str):
         return value
     parsed = urlparse(value)

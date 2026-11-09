@@ -381,11 +381,7 @@ async def test_missing_file_id_raises_fatal_error(
 async def test_upsert_forwards_app_metadata_to_rag_upsert(
     monkeypatch, headers_base, aiohttp_session_stub
 ):
-    """app_metadata from the message reaches the IndexMessage passed to rag_upsert.
-
-    process_message must wire headers['app_metadata'] into the IndexMessage so that
-    build_metadata can merge the custom keys into the metadata sent to OpenRAG.
-    """
+    """app_metadata from the message reaches the IndexMessage passed to rag_upsert."""
     captured = {"msg": None}
 
     async def fake_get(session, rag, partition, file_id):
@@ -475,11 +471,7 @@ async def test_unexpected_exception_raises_fatal(
 async def test_upsert_get_200_no_md5sum_reindexes(
     monkeypatch, headers_base, aiohttp_session_stub
 ):
-    """GET returns 200 with empty metadata (no md5sum).
-
-    The remote md5sum is falsy so need_index=True.
-    Assert rag_upsert is called with is_new=False.
-    """
+    """GET 200 without a remote md5sum -> re-indexed with a PUT (is_new=False)."""
     calls = {"upsert": None}
 
     async def fake_get(session, rag, partition, file_id):
@@ -501,7 +493,7 @@ async def test_upsert_get_200_no_md5sum_reindexes(
 
 
 # ------------------------
-# callback_token: extracted from both wire formats
+# callback_token: read from the JSON body
 # ------------------------
 async def _capture_upsert_msg(monkeypatch, dummy_msg, session_stub):
     """Run process_message on an upsert and return the IndexMessage handed to rag_upsert."""

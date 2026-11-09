@@ -119,15 +119,11 @@ def test_build_metadata_never_substitutes_md5sum_for_doc_rev():
 
 
 # ------------------------
-# NEW: File download via self-authenticating file_url
+# File download via self-authenticating file_url
 # ------------------------
 @pytest.mark.asyncio
 async def test_get_producer_file_no_auth_header():
-    """get_producer_file downloads from file_url without any Authorization header.
-
-    The file_url is self-authenticating (secret in the path), so no bearer is
-    ever sent. This verifies the function returns content correctly.
-    """
+    """The file_url carries its secret in the path: no Authorization header is sent."""
     expected_bytes = b"secure-file-content"
     fake_resp = FakeContextResp(status=200, body=expected_bytes)
     fake_session = FakeSession(fake_resp)
