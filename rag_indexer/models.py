@@ -9,7 +9,7 @@ class RagConn(BaseModel):
     @classmethod
     def _strip_trailing_slash(cls, v: str) -> str:
         # Normalize once so URL building never produces '//' (cozy rag.url may
-        # carry a trailing slash); applies to every endpoint and the Origin header.
+        # carry a trailing slash).
         return v.rstrip("/")
 
 
@@ -25,7 +25,6 @@ class IndexMessage(BaseModel):
     doc_rev: str | None = None  # CouchDB revision; cozy orders the status callbacks on it
     md5sum: str | None = None
     name: str | None = None
-    dir_id: str | None = None
     datetime: str | None = None
     content_type: str | None = None
     app_metadata: dict | None = None
