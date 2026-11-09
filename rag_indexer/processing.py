@@ -69,7 +69,6 @@ async def process_message(
             doc_rev=fields.get("doc_rev"),
             md5sum=fields.get("md5sum"),
             name=fields.get("name"),
-            dir_id=fields.get("dir_id"),
             datetime=fields.get("datetime"),
             content_type=fields.get("content_type"),
             app_metadata=fields.get("app_metadata"),

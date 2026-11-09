@@ -213,7 +213,7 @@ class _CapturingSession:
     def get(self, url, headers=None, timeout=None):
         return FakeContextResp(status=200, body=b"file-bytes")
 
-    def request(self, method, url, *, data=None, params=None, headers=None, timeout=None):
+    def request(self, method, url, *, data=None, headers=None, timeout=None):
         self.request_call = {
             "method": method,
             "url": url,
@@ -222,7 +222,6 @@ class _CapturingSession:
                 for opts, _hdrs, value in data._fields
                 if "filename" not in opts
             },
-            "params": params,
             "headers": headers,
         }
         return _FakeRequestResp(self._status, self._text)
@@ -260,14 +259,13 @@ async def test_rag_upsert_forwards_callback_token_as_form_field():
 
 @pytest.mark.asyncio
 async def test_rag_upsert_never_puts_callback_token_in_query_string():
-    """The token must not land in params, the URL, or an auth header."""
+    """The token must not land in the URL or an auth header."""
     session = _CapturingSession()
     msg = _upsert_msg(callback_token="cozy-secret-token")
     await rag_upsert(session, msg, is_new=True)
 
     call = session.request_call
     assert "cozy-secret-token" not in call["url"]
-    assert "cozy-secret-token" not in str(call["params"])
     # Authorization must stay the OpenRAG api_key
     assert call["headers"]["Authorization"] == "Bearer rag-key"
     assert "cozy-secret-token" not in str(call["headers"])

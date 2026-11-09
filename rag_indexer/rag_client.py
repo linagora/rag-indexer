@@ -178,25 +178,16 @@ async def _send_upsert(
     else:
         log.debug("upsert_callback_token_absent")
 
-    params = {}
-    if msg.dir_id:
-        params["parent_id"] = msg.dir_id
-    if msg.name:
-        params["name"] = msg.name
-    if msg.md5sum:
-        params["md5sum"] = msg.md5sum
-
     url_base = f"{rag.base_url}/indexer/partition/{msg.partition}/file/{msg.file_id}"
 
     method = "POST" if is_new else "PUT"
-    headers = {"Authorization": f"Bearer {msg.rag.api_key}", "Origin": rag.base_url}
+    headers = {"Authorization": f"Bearer {msg.rag.api_key}"}
 
     log.debug("rag_api_call", method=method, endpoint="indexer")
     async with session.request(
         method,
         url_base,
         data=form,
-        params=params,
         headers=headers,
         timeout=HTTP_TIMEOUT,
     ) as resp:

@@ -49,7 +49,6 @@ def build_fields(
     doc_rev: str | None = None,
     md5sum: str | None = None,
     name: str | None = None,
-    dir_id: str | None = None,
     dt: str | None = None,
     content_type: str | None = None,
     file_url: str | None = None,
@@ -70,8 +69,6 @@ def build_fields(
         f["md5sum"] = md5sum
     if name:
         f["name"] = name
-    if dir_id:
-        f["dir_id"] = dir_id
     if dt:
         f["datetime"] = dt
     if content_type:
@@ -139,7 +136,6 @@ async def cmd_upsert_file(args: argparse.Namespace) -> None:
         doc_rev=args.doc_rev,
         md5sum=md5sum,
         name=filename,
-        dir_id=args.dir_id,
         dt=args.datetime,
         content_type=content_type,
         file_url=args.file_url,
@@ -166,7 +162,6 @@ async def cmd_upsert_url(args: argparse.Namespace) -> None:
         doc_rev=args.doc_rev,
         md5sum=args.md5sum,
         name=args.name,
-        dir_id=args.dir_id,
         dt=args.datetime,
         content_type=args.content_type,
         file_url=args.file_url,
@@ -210,7 +205,6 @@ def make_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--md5sum", help="Expected MD5 (computed from file if absent for upsert-file)")
     p.add_argument("--name", help="Display name/filename")
-    p.add_argument("--dir-id", help="Parent directory (optional)")
     p.add_argument("--datetime", help="ISO datetime (optional)")
     p.add_argument(
         "--content-type", help="Content-Type (inferred from file for upsert-file)"
