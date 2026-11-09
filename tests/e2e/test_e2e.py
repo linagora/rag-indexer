@@ -49,6 +49,7 @@ def _make_upsert_headers(partition, file_id, md5sum, rag_base_url, name="test.tx
         # File content is always fetched via file_url (never sent as a body); the
         # stub's /testfile endpoint serves TESTFILE_CONTENT.
         "file_url": f"{rag_base_url}/testfile",
+        "doc_rev": "1-abc",
     }
 
 
@@ -168,7 +169,9 @@ async def test_transient_error_on_unreachable_rag(rmq):
         "action": "upsert",
         "partition": "e2e-test-auto",
         "file_id": "fail-doc",
+        "name": "fail.txt",
         "md5sum": _md5(body),
+        "file_url": "http://localhost:1/testfile",
         "content_type": "text/plain",
         "rag_base_url": "http://localhost:1",
         "rag_api_key": "",

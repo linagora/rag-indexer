@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 
 class RagConn(BaseModel):
@@ -33,3 +33,18 @@ class IndexMessage(BaseModel):
     callback_token: str | None = None  # secret: never logged, never in a URL
     rag: RagConn
     content: ContentSpec | None = None
+
+    @model_validator(mode="after")
+    def _check_required_fields(self):
+        if self.action == "upsert":
+            # openRAG picks its parser from the name's extension, and the md5sum is
+            # what tells whether the indexed content is up to date.
+            missing = [field for field in ("name", "md5sum") if not getattr(self, field)]
+            if not (self.content and self.content.file_url):
+                missing.append("file_url")
+            if missing:
+                raise ValueError(f"upsert without {', '.join(missing)}")
+        if self.callback_url and not self.doc_rev:
+            # cozy-stack orders the status callbacks on it and refuses one without it.
+            raise ValueError("callback_url without doc_rev")
+        return self

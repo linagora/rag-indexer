@@ -108,8 +108,7 @@ async def process_message(
                 # bumps the revision without changing a byte of the file.
                 # "version" is where the previous producer stored the md5sum.
                 md5_remote = doc_metadata.get("md5sum") or doc_metadata.get("version")
-                if not md5_remote or (msg.md5sum and md5_remote != msg.md5sum):
-                    need_index = True
+                need_index = md5_remote != msg.md5sum
             elif resp.status == 404:
                 need_index = True
                 is_new = True

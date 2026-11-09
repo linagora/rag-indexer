@@ -99,6 +99,8 @@ async def test_get_producer_file_reads_content_via_stub(rag_stub):
         action="upsert",
         partition="p1",
         file_id="f1",
+        name="doc.pdf",
+        md5sum="d41d8cd98f00b204e9800998ecf8427e",
         rag=RagConn(base_url="http://unused", api_key="unused"),
         content=ContentSpec(file_url=file_url),
     )

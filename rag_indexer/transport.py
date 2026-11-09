@@ -139,8 +139,11 @@ async def publish_to_dlq(
         metadata = extract_metadata(original_msg)
     callback_url = metadata.get("callback_url")
     if not callback_url:
-        # Old messages / tests without a callback field: nothing to notify.
         log.debug("dlq_callback_skipped", reason="no_callback_url")
+        return
+    if not metadata.get("doc_rev"):
+        # cozy-stack answers 400 to a status without the revision it describes.
+        log.warning("dlq_callback_skipped", reason="no_doc_rev")
         return
 
     # publish_to_dlq is only the terminal failure path (retries exhausted), so the

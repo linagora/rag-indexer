@@ -58,6 +58,9 @@ def headers_base():
         "rag_base_url": "http://rag:8000",
         "rag_api_key": "secret",
         "content_type": "application/octet-stream",
+        "name": "doc.txt",
+        "md5sum": "d41d8cd98f00b204e9800998ecf8427e",
+        "file_url": "http://cozy/files/downloads/sekret/doc.txt",
     }
 
 

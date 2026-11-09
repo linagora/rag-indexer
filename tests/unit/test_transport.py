@@ -129,6 +129,7 @@ async def test_publish_to_dlq_signs_callback_with_bearer_token():
     metadata = {
         "partition": "p1",
         "file_id": "f1",
+        "doc_rev": "3-abc",
         "callback_url": "https://cozy.example/ai/index/status",
         "callback_token": "cozy-secret-token",
     }
@@ -172,6 +173,7 @@ async def test_publish_to_dlq_without_token_sends_no_auth_header():
     metadata = {
         "partition": "p1",
         "file_id": "f1",
+        "doc_rev": "3-abc",
         "callback_url": "https://cozy.example/ai/index/status",
     }
 
@@ -189,6 +191,7 @@ async def test_publish_to_dlq_reads_callback_token_from_body():
     body = json.dumps({
         "partition": "p1",
         "file_id": "f1",
+        "doc_rev": "3-abc",
         "callback_url": "https://cozy.example/ai/index/status",
         "callback_token": "tok-from-body",
     }).encode()
@@ -206,3 +209,16 @@ async def test_publish_to_dlq_callback_token_not_echoed_in_payload_metadata():
     result = _file_metadata({"doc_rev": "3-abc", "callback_token": "cozy-secret-token"})
     assert "callback_token" not in result
     assert "cozy-secret-token" not in str(result)
+
+
+@pytest.mark.asyncio
+async def test_publish_to_dlq_skips_callback_without_doc_rev():
+    """cozy-stack would answer 400: the message still lands in the DLQ, no POST."""
+    channel, session = _FakeChannel(), _FakeCallbackSession()
+    metadata = {"partition": "p1", "file_id": "f1", "callback_url": "https://cozy.example/cb"}
+
+    await publish_to_dlq(channel, _DlqMessage(), session, metadata=metadata)
+    await _await_dlq_callbacks()
+
+    assert session.post_call is None
+    assert len(channel.default_exchange.published) == 1

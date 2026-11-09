@@ -137,15 +137,9 @@ async def rag_upsert(
     form = FormData()
     rag = msg.rag
 
-    filename = msg.name or f"{msg.file_id}.bin"
-
-    if msg.content and msg.content.file_url:
-        data_bytes = await get_producer_file(session, msg)
-    else:
-        raise FatalError("No content provided")
-
+    data_bytes = await get_producer_file(session, msg)
     content_type = msg.content_type or "application/octet-stream"
-    form.add_field("file", data_bytes, filename=filename, content_type=content_type)
+    form.add_field("file", data_bytes, filename=msg.name, content_type=content_type)
 
     meta = build_metadata(msg)
 
