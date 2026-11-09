@@ -38,7 +38,7 @@ def guess_content_type(
     return ctype or fallback
 
 
-def build_headers(
+def build_fields(
     *,
     action: str,
     partition: str,
@@ -55,7 +55,7 @@ def build_headers(
     file_url: str | None = None,
     callback_url: str | None = None,
 ) -> dict:
-    h = {
+    f = {
         "action": action,  # "upsert" | "delete"
         "partition": partition,
         "file_id": file_id,
@@ -63,41 +63,34 @@ def build_headers(
         "rag_api_key": rag_api_key,
     }
     if doctype:
-        h["doctype"] = doctype
+        f["doctype"] = doctype
     if doc_rev:
-        h["doc_rev"] = doc_rev
+        f["doc_rev"] = doc_rev
     if md5sum:
-        h["md5sum"] = md5sum
+        f["md5sum"] = md5sum
     if name:
-        h["name"] = name
+        f["name"] = name
     if dir_id:
-        h["dir_id"] = dir_id
+        f["dir_id"] = dir_id
     if dt:
-        h["datetime"] = dt
+        f["datetime"] = dt
     if content_type:
-        h["content_type"] = content_type
+        f["content_type"] = content_type
     if file_url:
-        h["file_url"] = file_url
+        f["file_url"] = file_url
     if callback_url:
-        h["callback_url"] = callback_url
-    return h
+        f["callback_url"] = callback_url
+    return f
 
 
 async def publish_message(
     *,
     routing_key: str,
-    headers: dict,
-    body: bytes | None,
-    fmt: str = "headers",
+    fields: dict,
 ) -> None:
-    """Publish a message in either 'headers' or 'cozy-json' format.
+    """Publish the fields as a JSON body, the way cozy-stack does.
 
-    'headers' (default): business fields in AMQP headers.
-    'cozy-json': all business fields JSON-encoded in the body, AMQP headers empty;
-                 content-type is set to application/json.
-
-    In both formats file content is fetched by the consumer via the file_url field;
-    the AMQP body never carries binary content.
+    The consumer downloads the file content from file_url.
     """
     try:
         connection = await aio_pika.connect_robust(RABBITMQ_URL)
@@ -112,19 +105,11 @@ async def publish_message(
             EXCHANGE_NAME, ExchangeType.TOPIC, durable=True
         )
 
-        if fmt == "cozy-json":
-            msg = Message(
-                body=json.dumps(headers).encode(),
-                headers={},
-                content_type="application/json",
-                delivery_mode=DeliveryMode.PERSISTENT,
-            )
-        else:
-            msg = Message(
-                body=body or b"",
-                headers=headers,
-                delivery_mode=DeliveryMode.PERSISTENT,
-            )
+        msg = Message(
+            body=json.dumps(fields).encode(),
+            content_type="application/json",
+            delivery_mode=DeliveryMode.PERSISTENT,
+        )
 
         await ex.publish(msg, routing_key=routing_key)
 
@@ -140,13 +125,11 @@ async def cmd_upsert_file(args: argparse.Namespace) -> None:
 
     md5sum = args.md5sum or md5_of_bytes(data)
     content_type = args.content_type or guess_content_type(args.path)
-    fmt = args.format
-
     if not args.file_url:
         print("--file-url is required: the consumer always fetches file content via file_url, never from the AMQP body.", file=sys.stderr)
         sys.exit(2)
 
-    headers = build_headers(
+    fields = build_fields(
         action="upsert",
         partition=args.partition,
         file_id=args.file_id,
@@ -164,8 +147,8 @@ async def cmd_upsert_file(args: argparse.Namespace) -> None:
     )
 
     # data is only read to derive md5sum/content-type/name -- content always comes via file_url.
-    await publish_message(routing_key=args.routing_key, headers=headers, body=b"", fmt=fmt)
-    print(f"Published upsert-file for {args.file_id} on {args.partition} [{fmt}]")
+    await publish_message(routing_key=args.routing_key, fields=fields)
+    print(f"Published upsert-file for {args.file_id} on {args.partition}")
 
 
 async def cmd_upsert_url(args: argparse.Namespace) -> None:
@@ -173,8 +156,7 @@ async def cmd_upsert_url(args: argparse.Namespace) -> None:
         print("--file-url is required for upsert-url", file=sys.stderr)
         sys.exit(2)
 
-    fmt = args.format
-    headers = build_headers(
+    fields = build_fields(
         action="upsert",
         partition=args.partition,
         file_id=args.file_id,
@@ -191,13 +173,12 @@ async def cmd_upsert_url(args: argparse.Namespace) -> None:
         callback_url=args.callback_url,
     )
 
-    await publish_message(routing_key=args.routing_key, headers=headers, body=b"", fmt=fmt)
-    print(f"Published upsert-url for {args.file_id} on {args.partition} [{fmt}]")
+    await publish_message(routing_key=args.routing_key, fields=fields)
+    print(f"Published upsert-url for {args.file_id} on {args.partition}")
 
 
 async def cmd_delete(args: argparse.Namespace) -> None:
-    fmt = args.format
-    headers = build_headers(
+    fields = build_fields(
         action="delete",
         partition=args.partition,
         file_id=args.file_id,
@@ -205,8 +186,8 @@ async def cmd_delete(args: argparse.Namespace) -> None:
         rag_api_key=args.rag_api_key or RAG_API_KEY,
         callback_url=args.callback_url,
     )
-    await publish_message(routing_key=args.routing_key, headers=headers, body=b"", fmt=fmt)
-    print(f"Published delete for {args.file_id} on {args.partition} [{fmt}]")
+    await publish_message(routing_key=args.routing_key, fields=fields)
+    print(f"Published delete for {args.file_id} on {args.partition}")
 
 
 def make_parser() -> argparse.ArgumentParser:
@@ -235,10 +216,6 @@ def make_parser() -> argparse.ArgumentParser:
         "--content-type", help="Content-Type (inferred from file for upsert-file)"
     )
     p.add_argument("--callback-url", help="URL de callback cozy pour le statut d'indexation")
-    p.add_argument(
-        "--format", choices=["headers", "cozy-json"], default="headers",
-        help="Wire format: 'headers' (default) or 'cozy-json' (all fields in JSON body)",
-    )
 
     sub = p.add_subparsers(dest="cmd", required=True)
 

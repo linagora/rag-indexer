@@ -12,47 +12,18 @@ from rag_indexer.errors import TransientError, FatalError
 
 log = structlog.get_logger()
 
-# Two wire formats coexist:
-#   "headers" format   — all business fields are AMQP message headers (legacy, used by all
-#                        existing producers and tests).
-#   "cozy-json" format — AMQP headers carry only broker-added fields (x-death, …); all
-#                        business fields are JSON-encoded in the body. Used when the producer
-#                        cannot set custom AMQP headers (e.g. cozy-stack's shared rabbitmq
-#                        package).
-#
-# File content is always fetched via file_url in both formats -- the AMQP body never
-# carries binary content. The two formats are transparent to all code above extract_metadata().
-
-
 def extract_metadata(message: aio_pika.IncomingMessage) -> dict:
-    """Return business metadata fields from a message regardless of wire format.
+    """Return the business fields of a message: the JSON object in its body.
 
-    Detection heuristic:
-    - If 'partition' is present in message.headers → "headers" format, return headers.
-    - Else if body is valid JSON containing 'partition' → "cozy-json" format, return body dict.
-    - Else → return headers as-is (fallback; downstream validation will reject the message).
-
-    Why 'partition' rather than checking for empty headers:
-        RabbitMQ appends x-death, x-first-death-reason, x-first-death-queue, and
-        x-first-death-exchange headers during dead-lettering through TTL retry queues. A
-        cozy-json message that has completed a retry cycle will arrive with non-empty AMQP
-        headers containing only these broker-added fields — no business fields. Checking for
-        the presence of the required business field 'partition' is robust against this.
+    That is what cozy-stack's publisher sends (pkg/rabbitmq: a JSON payload, no
+    custom headers). AMQP headers only carry what the broker adds (x-death).
+    Anything else gives an empty dict, which validation then rejects.
     """
-    raw_headers = message.headers or {}
-    if "partition" in raw_headers:
-        return raw_headers
-
     try:
-        body = message.body
-        if body:
-            data = json.loads(body.decode("utf-8"))
-            if isinstance(data, dict) and "partition" in data:
-                return data
-    except Exception:
-        pass
-
-    return raw_headers  # fallback: downstream validation will reject this
+        data = json.loads(message.body)
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def get_retry_count(message: aio_pika.IncomingMessage) -> int:
@@ -82,35 +53,34 @@ async def process_message(
 ) -> None:
     """Validate, route, and execute the indexing action for one message.
 
-    Supports both 'headers' and 'cozy-json' wire formats via extract_metadata().
     Raises TransientError for retryable failures and FatalError for permanent ones;
     unexpected exceptions are wrapped as FatalError to prevent infinite retry loops.
 
     Pass `metadata` if already extracted by the caller to avoid a redundant parse.
     """
     try:
-        headers = metadata if metadata is not None else extract_metadata(message)
+        fields = metadata if metadata is not None else extract_metadata(message)
 
         msg = IndexMessage(
-            action=headers.get("action", "upsert"),
-            partition=headers.get("partition") or "",
-            file_id=headers.get("file_id"),
-            doctype=headers.get("doctype"),
-            doc_rev=headers.get("doc_rev"),
-            md5sum=headers.get("md5sum"),
-            name=headers.get("name"),
-            dir_id=headers.get("dir_id"),
-            datetime=headers.get("datetime"),
-            content_type=headers.get("content_type"),
-            app_metadata=headers.get("app_metadata"),
-            callback_url=headers.get("callback_url"),
-            callback_token=headers.get("callback_token"),
+            action=fields.get("action", "upsert"),
+            partition=fields.get("partition") or "",
+            file_id=fields.get("file_id"),
+            doctype=fields.get("doctype"),
+            doc_rev=fields.get("doc_rev"),
+            md5sum=fields.get("md5sum"),
+            name=fields.get("name"),
+            dir_id=fields.get("dir_id"),
+            datetime=fields.get("datetime"),
+            content_type=fields.get("content_type"),
+            app_metadata=fields.get("app_metadata"),
+            callback_url=fields.get("callback_url"),
+            callback_token=fields.get("callback_token"),
             rag=RagConn(
-                base_url=headers.get("rag_base_url", ""),
-                api_key=headers.get("rag_api_key", ""),
+                base_url=fields.get("rag_base_url", ""),
+                api_key=fields.get("rag_api_key", ""),
             ),
             content=ContentSpec(
-                file_url=headers.get("file_url"),
+                file_url=fields.get("file_url"),
             ),
         )
         log.debug("message_processing")

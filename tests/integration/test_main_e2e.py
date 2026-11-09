@@ -8,6 +8,7 @@ Tests are skipped when the broker is not reachable.
 
 import asyncio
 import contextlib
+import json
 import sys
 from pathlib import Path
 
@@ -97,7 +98,7 @@ async def rag_stub():
       Default response when no rule matches: 200 {"status": "ok"}
     """
     call_log = []
-    response_rules = {}
+    response_rules = {("GET", "/testfile"): (200, _DOCUMENT_MARKDOWN)}
 
     async def handler(request: web.Request) -> web.Response:
         body = await request.read()
@@ -176,7 +177,6 @@ async def main_consumer(rabbitmq_url, monkeypatch):
 async def _publish(
     *,
     file_id: str,
-    body: bytes,
     name: str,
     rag_base_url: str,
     content_type: str = "text/markdown",
@@ -184,7 +184,7 @@ async def _publish(
     file_url: str | None = None,
 ) -> None:
     """Publish a message via the producer — same code path as production."""
-    headers = producer_mod.build_headers(
+    fields = producer_mod.build_fields(
         action=action,
         partition="test-partition",
         file_id=file_id,
@@ -196,8 +196,7 @@ async def _publish(
     )
     await producer_mod.publish_message(
         routing_key=_PUBLISH_ROUTING_KEY,
-        headers=headers,
-        body=body,
+        fields=fields,
     )
 
 
@@ -213,7 +212,7 @@ async def test_upsert_happy_path(rabbitmq_url, monkeypatch, rag_stub, rmq_channe
     response_rules[("POST", "/indexer/partition/test-partition/file/e2e-upsert-001")] = (201, {"id": "e2e-upsert-001"})
 
     await _publish(
-        file_id="e2e-upsert-001", body=_DOCUMENT_MARKDOWN, name="guide.md",
+        file_id="e2e-upsert-001", name="guide.md",
         rag_base_url=rag_base_url, file_url=f"{rag_base_url}/testfile",
     )
     await _poll(lambda: any(c["method"] == "POST" for c in call_log))
@@ -233,7 +232,7 @@ async def test_delete_happy_path(rabbitmq_url, monkeypatch, rag_stub, rmq_channe
 
     response_rules[("DELETE", "/indexer/partition/test-partition/file/e2e-delete-001")] = (200, {})
 
-    await _publish(file_id="e2e-delete-001", body=b"", name="doc.md", rag_base_url=rag_base_url, action="delete")
+    await _publish(file_id="e2e-delete-001", name="doc.md", rag_base_url=rag_base_url, action="delete")
     await _poll(lambda: any(c["method"] == "DELETE" for c in call_log))
 
     delete_calls = [c for c in call_log if c["method"] == "DELETE"]
@@ -250,10 +249,10 @@ async def test_fatal_error_goes_to_dlq_immediately(rabbitmq_url, monkeypatch, ra
 
     response_rules[("GET", "/partition/test-partition/file/e2e-fatal-001")] = (400, "Bad request")
 
-    await _publish(file_id="e2e-fatal-001", body=_DOCUMENT_MARKDOWN, name="fatal.md", rag_base_url=rag_base_url)
+    await _publish(file_id="e2e-fatal-001", name="fatal.md", rag_base_url=rag_base_url)
 
     dlq_msg = await _consume_one(dlq, timeout=10.0)
-    assert dlq_msg.body == _DOCUMENT_MARKDOWN
+    assert json.loads(dlq_msg.body)["file_id"] == "e2e-fatal-001"
     assert len([c for c in call_log if c["method"] == "GET"]) == 1
     await dlq_msg.ack()
 
@@ -274,7 +273,7 @@ async def test_transient_error_then_success_on_retry(rabbitmq_url, monkeypatch, 
     response_rules[("POST", "/indexer/partition/test-partition/file/e2e-flaky-001")] = (201, {"id": "e2e-flaky-001"})
 
     await _publish(
-        file_id="e2e-flaky-001", body=_DOCUMENT_MARKDOWN, name="flaky.md",
+        file_id="e2e-flaky-001", name="flaky.md",
         rag_base_url=rag_base_url, file_url=f"{rag_base_url}/testfile",
     )
 
@@ -295,10 +294,10 @@ async def test_retry_exhaustion_to_dlq(rabbitmq_url, monkeypatch, rag_stub, rmq_
 
     response_rules[("GET", "/partition/test-partition/file/e2e-exhausted-001")] = (503, "RAG down")
 
-    await _publish(file_id="e2e-exhausted-001", body=_DOCUMENT_MARKDOWN, name="exhausted.md", rag_base_url=rag_base_url)
+    await _publish(file_id="e2e-exhausted-001", name="exhausted.md", rag_base_url=rag_base_url)
 
     ttl_total = sum(ttl for _, ttl in TEST_RETRY_QUEUES) / 1000.0
     dlq_msg = await _consume_one(dlq, timeout=ttl_total + 5.0)
-    assert dlq_msg.body == _DOCUMENT_MARKDOWN
+    assert json.loads(dlq_msg.body)["file_id"] == "e2e-exhausted-001"
     assert len([c for c in call_log if c["method"] == "GET"]) == len(TEST_RETRY_QUEUES) + 1
     await dlq_msg.ack()

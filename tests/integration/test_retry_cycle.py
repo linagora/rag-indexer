@@ -6,6 +6,7 @@ Tests are skipped when the broker is not reachable.
 
 import asyncio
 import hashlib
+import json
 from datetime import datetime
 
 import aio_pika
@@ -37,9 +38,9 @@ async def _consume_one(queue, timeout: float = 15.0) -> aio_pika.IncomingMessage
 
 
 def _make_message(
-    file_id: str, body: bytes, *, name: str, content_type: str = "text/markdown", md5sum: str | None = None
+    file_id: str, *, name: str, content_type: str = "text/markdown", md5sum: str | None = None
 ) -> Message:
-    headers = {
+    fields = {
         "action": "upsert",
         "partition": "test-partition",
         "file_id": file_id,
@@ -49,10 +50,10 @@ def _make_message(
         "name": name,
     }
     if md5sum:
-        headers["md5sum"] = md5sum
+        fields["md5sum"] = md5sum
     return Message(
-        body,
-        headers=headers,
+        json.dumps(fields).encode(),
+        content_type="application/json",
         delivery_mode=DeliveryMode.PERSISTENT,
     )
 
@@ -72,7 +73,7 @@ async def test_happy_path(rmq_channel, monkeypatch):
 
     exchange = await channel.get_exchange(TEST_EXCHANGE)
     await exchange.publish(
-        _make_message("happy-path-001", b"# Happy Path\n\nDocument de test.\n", name="happy_path.md"),
+        _make_message("happy-path-001", name="happy_path.md"),
         routing_key="test.retry.index",
     )
 
@@ -96,7 +97,7 @@ async def test_fatal_error_goes_to_dlq_immediately(rmq_channel, monkeypatch):
 
     exchange = await channel.get_exchange(TEST_EXCHANGE)
     await exchange.publish(
-        _make_message("fatal-error-001", b"# Fatal\n", name="fatal.md"),
+        _make_message("fatal-error-001", name="fatal.md"),
         routing_key="test.retry.index",
     )
 
@@ -109,7 +110,7 @@ async def test_fatal_error_goes_to_dlq_immediately(rmq_channel, monkeypatch):
         await msg.ack()
 
     dlq_msg = await _consume_one(dlq, timeout=5.0)
-    assert dlq_msg.body == b"# Fatal\n"
+    assert json.loads(dlq_msg.body)["file_id"] == "fatal-error-001"
     await dlq_msg.ack()
 
 
@@ -123,19 +124,16 @@ async def test_transient_error_exhausts_retries_to_dlq(rmq_channel, monkeypatch)
     monkeypatch.setattr(rag_client, "rag_get_file", fake_get)
 
     exchange = await channel.get_exchange(TEST_EXCHANGE)
+    body = json.dumps({
+        "action": "upsert",
+        "partition": "test-partition",
+        "file_id": "retry-exhausted-001",
+        "rag_base_url": "http://fake-rag:8000",
+        "rag_api_key": "test-key",
+        "content_type": "text/plain",
+    }).encode()
     await exchange.publish(
-        Message(
-            b"test-body",
-            headers={
-                "action": "upsert",
-                "partition": "test-partition",
-                "file_id": "retry-exhausted-001",
-                "rag_base_url": "http://fake-rag:8000",
-                "rag_api_key": "test-key",
-                "content_type": "text/plain",
-            },
-            delivery_mode=DeliveryMode.PERSISTENT,
-        ),
+        Message(body, delivery_mode=DeliveryMode.PERSISTENT),
         routing_key="test.retry.index",
     )
 
@@ -161,12 +159,12 @@ async def test_transient_error_exhausts_retries_to_dlq(rmq_channel, monkeypatch)
 
     # Verify message arrived in DLQ
     dlq_msg = await _consume_one(dlq, timeout=5.0)
-    assert dlq_msg.body == b"test-body"
+    assert dlq_msg.body == body
     await dlq_msg.ack()
 
 
 async def test_dlq_failed_callback_is_posted(rmq_channel):
-    """publish_to_dlq with a callback_url header -> message to DLQ AND an 'error'-status callback POST."""
+    """publish_to_dlq with a callback_url -> message to DLQ AND an 'error'-status callback POST."""
     channel, main_q, dlq = rmq_channel
 
     # Local server standing in for the cozy webhook that receives the callback.
@@ -183,10 +181,9 @@ async def test_dlq_failed_callback_is_posted(rmq_channel):
     callback_url = str(server.make_url("/cb"))
 
     try:
-        # Publish a message carrying the callback_url + doc identity headers.
+        # Publish a message carrying the callback_url + doc identity.
         exchange = await channel.get_exchange(TEST_EXCHANGE)
-        body = b'{"test": "dlq-callback"}'
-        headers = {
+        fields = {
             "file_id": "doc-dlq",
             "partition": "user-dlq",
             "callback_url": callback_url,
@@ -195,7 +192,7 @@ async def test_dlq_failed_callback_is_posted(rmq_channel):
             "datetime": "2026-01-15T12:00:00Z",
         }
         await exchange.publish(
-            Message(body, headers=headers, delivery_mode=DeliveryMode.PERSISTENT),
+            Message(json.dumps(fields).encode(), delivery_mode=DeliveryMode.PERSISTENT),
             routing_key="test.retry.index",
         )
         msg = await _consume_one(main_q)
@@ -209,7 +206,7 @@ async def test_dlq_failed_callback_is_posted(rmq_channel):
 
         # 1) Message landed in the DLQ.
         dlq_msg = await _consume_one(dlq, timeout=5.0)
-        assert dlq_msg.body == body
+        assert json.loads(dlq_msg.body) == fields
         await dlq_msg.ack()
 
         # 2) The failure callback was POSTed with the expected body.
@@ -250,7 +247,7 @@ async def test_transient_error_then_success_on_retry(rmq_channel, monkeypatch):
 
     exchange = await channel.get_exchange(TEST_EXCHANGE)
     await exchange.publish(
-        _make_message("retry-then-success-001", b"# Retry then success\n\nDocument test.\n", name="test_retry.md"),
+        _make_message("retry-then-success-001", name="test_retry.md"),
         routing_key="test.retry.index",
     )
 
@@ -300,7 +297,7 @@ async def test_concurrent_messages_same_file(rmq_channel, monkeypatch):
     exchange = await channel.get_exchange(TEST_EXCHANGE)
     for _ in range(2):
         await exchange.publish(
-            _make_message("concurrent-same-file-001", body, name="concurrent.md", md5sum=md5sum),
+            _make_message("concurrent-same-file-001", name="concurrent.md", md5sum=md5sum),
             routing_key="test.retry.index",
         )
 

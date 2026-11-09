@@ -117,13 +117,12 @@ async def publish_to_dlq(
     """Publish message copy to the dead letter queue.
 
     After the message safely lands in the DLQ, best-effort notify the cozy callback
-    (via callback_url from AMQP headers or cozy-json body) that indexing failed.
+    (via the message's callback_url) that indexing failed.
 
     Pass `metadata` if already extracted by the caller to avoid a redundant parse.
     """
     # Republish to the DLQ FIRST -- the message must reach the DLQ no matter what.
-    # Use real AMQP headers (including any x-death entries) to preserve replay fidelity
-    # and keep the original wire format intact for manual inspection / replaying.
+    # Keep the x-death headers: they record the retry history for inspection.
     real_headers = original_msg.headers or {}
     await channel.default_exchange.publish(
         Message(

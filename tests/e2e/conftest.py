@@ -13,9 +13,9 @@ from aiohttp.test_utils import TestServer
 from rag_indexer.processing import process_message
 from tests.integration.conftest import _docker_is_available, _amqp_is_responsive
 
-# Static bytes served by the RAG stub's /testfile endpoint, used by cozy-json tests
+# Static bytes served by the RAG stub's /testfile endpoint, the file_url target
 # that must provide a file_url for the consumer to download file content.
-TESTFILE_CONTENT = b"cozy-json test file content"
+TESTFILE_CONTENT = b"e2e test file content"
 
 E2E_EXCHANGE = "e2e.test.topic"
 E2E_QUEUE = "e2e.test.q"
@@ -104,7 +104,7 @@ def _make_rag_stub_app(state: RagStubState) -> web.Application:
         return web.Response(status=204)
 
     async def get_testfile(request: web.Request) -> web.Response:
-        """Static file endpoint used by cozy-json tests as file_url target."""
+        """Static file endpoint used as file_url target."""
         return web.Response(body=TESTFILE_CONTENT, content_type="text/plain")
 
     app = web.Application()
@@ -216,12 +216,12 @@ async def rmq(require_docker, rabbitmq_url):
     await connection.close()
 
 
-async def publish_msg(exchange, body: bytes, headers: dict) -> None:
-    """Publish a persistent message to the E2E routing key."""
+async def publish_msg(exchange, fields: dict) -> None:
+    """Publish a persistent message carrying the fields as a JSON body."""
     await exchange.publish(
         Message(
-            body=body,
-            headers=headers,
+            body=json.dumps(fields).encode(),
+            content_type="application/json",
             delivery_mode=DeliveryMode.PERSISTENT,
         ),
         routing_key="e2e.test.file",
@@ -235,21 +235,20 @@ async def consume_and_process(queue, rag_base_url: str) -> None:
     """
     msg = await asyncio.wait_for(queue.get(no_ack=False), timeout=5)
 
-    # Build a patched message that overrides rag_base_url and rag_api_key
-    # in the headers so process_message() talks to our stub (or live).
-    original_headers = dict(msg.headers or {})
-    original_headers["rag_base_url"] = rag_base_url
-    original_headers["rag_api_key"] = "e2e-test-key"
+    # Override rag_base_url and rag_api_key in the body so process_message()
+    # talks to our stub (or live).
+    fields = json.loads(msg.body)
+    fields["rag_base_url"] = rag_base_url
+    fields["rag_api_key"] = "e2e-test-key"
 
     class _PatchedMessage:
-        """Minimal duck-type of aio_pika.IncomingMessage with patched headers."""
+        """Minimal duck-type of aio_pika.IncomingMessage with a patched body."""
 
-        def __init__(self, original, patched_headers):
-            self._original = original
-            self.headers = patched_headers
-            self.body = original.body
+        def __init__(self, original, patched_fields):
+            self.headers = original.headers
+            self.body = json.dumps(patched_fields).encode()
 
-    patched = _PatchedMessage(msg, original_headers)
+    patched = _PatchedMessage(msg, fields)
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -258,12 +257,11 @@ async def consume_and_process(queue, rag_base_url: str) -> None:
         await msg.ack()
 
 
-async def consume_and_process_cozy_json(queue) -> None:
-    """Consume one cozy-json message and call process_message() without patching.
+async def consume_unpatched(queue) -> None:
+    """Consume one message and call process_message() without patching.
 
-    For cozy-json format the rag_base_url is already embedded in the JSON body
-    (set at publish time), so no header patching is needed. Real AMQP headers
-    (e.g. x-death after a retry cycle) are preserved as-is.
+    The rag_base_url is already in the body (set at publish time). Real AMQP
+    headers (e.g. x-death after a retry cycle) are preserved as-is.
 
     Raises TransientError or FatalError on failure.
     """
@@ -275,7 +273,7 @@ async def consume_and_process_cozy_json(queue) -> None:
         await msg.ack()
 
 
-async def publish_cozy_json_msg(
+async def publish_upsert_msg(
     exchange,
     rag_base_url: str,
     *,
@@ -290,9 +288,9 @@ async def publish_cozy_json_msg(
     amqp_headers: dict | None = None,
     **extra,
 ) -> bytes:
-    """Publish a cozy-json format message; return the body bytes for assertion.
+    """Publish a message; return the body bytes for assertion.
 
-    All business fields go in the JSON body; AMQP headers are empty by default.
+    AMQP headers are empty by default.
     Pass amqp_headers to simulate broker-added headers (e.g. x-death after retry).
     The file_url defaults to {rag_base_url}/testfile so the consumer can fetch
     TESTFILE_CONTENT without a separate file server.
