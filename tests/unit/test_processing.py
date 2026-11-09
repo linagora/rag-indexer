@@ -1,5 +1,4 @@
 import asyncio
-import json
 
 import aiohttp
 import pytest
@@ -129,7 +128,6 @@ async def test_upsert_new_on_404_triggers_post(
     monkeypatch.setattr(rag_client, "rag_get_file", fake_get)
     monkeypatch.setattr(rag_client, "rag_upsert", fake_upsert)
 
-    body = b"PDFDATA"
     headers = {
         **headers_base,
         "action": "upsert",
@@ -168,7 +166,6 @@ async def test_upsert_update_on_md5_change_triggers_put(
     monkeypatch.setattr(rag_client, "rag_get_file", fake_get)
     monkeypatch.setattr(rag_client, "rag_upsert", fake_upsert)
 
-    body = b"PDFDATA"
     headers = {**headers_base, "action": "upsert", "md5sum": "NEW"}
     msg = DummyMessage(headers)
 
