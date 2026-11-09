@@ -4,6 +4,8 @@ Uses aiohttp's TestServer to spin up an in-process stub that records
 requests and returns programmable responses. Does NOT require RabbitMQ.
 """
 
+import io
+
 import aiohttp
 import pytest_asyncio
 from aiohttp import web
@@ -106,9 +108,10 @@ async def test_get_producer_file_reads_content_via_stub(rag_stub):
     )
 
     async with aiohttp.ClientSession() as session:
-        result = await get_producer_file(session, msg)
+        dest = io.BytesIO()
+        await get_producer_file(session, msg, dest)
 
-    assert result == expected_content
+    assert dest.getvalue() == expected_content
     assert len(call_log) == 1
     assert call_log[0]["method"] == "GET"
     assert call_log[0]["path"] == file_path

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import tempfile
 from dataclasses import dataclass
 from typing import Any
 
@@ -51,9 +52,15 @@ async def rag_delete(
         return RagResponse(status=resp.status, text=text)
 
 
-async def get_producer_file(session: aiohttp.ClientSession, msg: IndexMessage) -> bytes:
-    # The file_url carries its own authentication via the secret in its path
-    # (cozy-stack /files/downloads/<secret>/<filename>); no Authorization header.
+_DOWNLOAD_CHUNK_SIZE = 64 * 1024
+
+
+async def get_producer_file(session: aiohttp.ClientSession, msg: IndexMessage, dest) -> None:
+    """Write the content at msg's file_url into the binary file object dest.
+
+    The file_url carries its own authentication via the secret in its path
+    (cozy-stack /files/downloads/<secret>/<filename>); no Authorization header.
+    """
     log.debug("file_download", source="file_url")
     try:
         async with session.get(msg.content.file_url, timeout=HTTP_TIMEOUT) as resp:
@@ -61,8 +68,8 @@ async def get_producer_file(session: aiohttp.ClientSession, msg: IndexMessage) -
                 raise TransientError(f"Failed to fetch file_url ({resp.status})")
             if resp.status >= 400:
                 raise FatalError(f"Failed to fetch file_url ({resp.status})")
-            file = await resp.read()
-        return file
+            async for chunk in resp.content.iter_chunked(_DOWNLOAD_CHUNK_SIZE):
+                dest.write(chunk)
     except TransientError:
         raise
     except FatalError:
@@ -133,13 +140,25 @@ async def rag_upsert(
     msg: IndexMessage,
     is_new: bool
 ) -> None:
+    # Through a file on disk: openRAG takes uploads up to 1 GB, too much to hold in
+    # memory for each of the messages processed in parallel.
+    with tempfile.TemporaryFile() as content:
+        await get_producer_file(session, msg, content)
+        content.seek(0)
+        await _send_upsert(session, msg, is_new, content)
 
+
+async def _send_upsert(
+    session: aiohttp.ClientSession,
+    msg: IndexMessage,
+    is_new: bool,
+    content,
+) -> None:
     form = FormData()
     rag = msg.rag
 
-    data_bytes = await get_producer_file(session, msg)
     content_type = msg.content_type or "application/octet-stream"
-    form.add_field("file", data_bytes, filename=msg.name, content_type=content_type)
+    form.add_field("file", content, filename=msg.name, content_type=content_type)
 
     meta = build_metadata(msg)
 

@@ -225,6 +225,7 @@ async def test_upsert_happy_path(rabbitmq_url, monkeypatch, rag_stub, rmq_channe
     assert len(post_calls) == 1
     assert "test-partition" in post_calls[0]["path"]
     assert b"guide.md" in post_calls[0]["body"]
+    assert _DOCUMENT_MARKDOWN in post_calls[0]["body"]
     assert await dlq.get(fail=False) is None
 
 
