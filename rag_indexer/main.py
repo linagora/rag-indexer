@@ -7,7 +7,6 @@ import aio_pika
 import aiohttp
 import structlog
 from aiormq import AMQPConnectionError
-from pydantic import ValidationError
 from structlog.contextvars import clear_contextvars, bind_contextvars
 
 from rag_indexer.config import RABBITMQ_URL, HTTP_TIMEOUT, CONCURRENCY, HEALTH_PORT
@@ -87,13 +86,6 @@ async def main():
                             MESSAGES_TOTAL.labels(action=action, status="success", partition=partition).inc()
                             PROCESSING_DURATION.labels(action=action).observe(duration)
                             log.info("message_processed", status="success", duration_s=round(duration, 3))
-
-                        except ValidationError as ve:
-                            duration = time.monotonic() - start_time
-                            MESSAGES_TOTAL.labels(action=action, status="dlq", partition=partition).inc()
-                            PROCESSING_DURATION.labels(action=action).observe(duration)
-                            log.error("message_invalid_payload", error=str(ve))
-                            await publish_to_dlq(channel, message, session, metadata)
 
                         except UnsupportedError as ue:
                             # A format openRAG will never index: ack, like cozy-stack's

@@ -122,9 +122,6 @@ async def cmd_upsert_file(args: argparse.Namespace) -> None:
 
     md5sum = args.md5sum or md5_of_bytes(data)
     content_type = args.content_type or guess_content_type(args.path)
-    if not args.file_url:
-        print("--file-url is required: the consumer always fetches file content via file_url, never from the AMQP body.", file=sys.stderr)
-        sys.exit(2)
 
     fields = build_fields(
         action="upsert",
@@ -148,8 +145,9 @@ async def cmd_upsert_file(args: argparse.Namespace) -> None:
 
 
 async def cmd_upsert_url(args: argparse.Namespace) -> None:
-    if not args.file_url:
-        print("--file-url is required for upsert-url", file=sys.stderr)
+    if not (args.md5sum and args.name):
+        # The consumer refuses an upsert without them.
+        print("--md5sum and --name are required for upsert-url", file=sys.stderr)
         sys.exit(2)
 
     fields = build_fields(
