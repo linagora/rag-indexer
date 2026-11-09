@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from rag_indexer.models import IndexMessage, RagConn, ContentSpec
@@ -7,6 +9,7 @@ from rag_indexer.rag_client import (
     callback_metadata,
     rag_upsert,
 )
+from rag_indexer.errors import TransientError
 from tests.conftest import FakeContextResp, FakeSession
 
 
@@ -234,8 +237,9 @@ def test_callback_metadata_narrows_to_what_cozy_reads():
 class _CapturingSession:
     """Fake ClientSession recording the rag_upsert request."""
 
-    def __init__(self, status: int = 201):
+    def __init__(self, status: int = 201, text: str = ""):
         self._status = status
+        self._text = text
         self.request_call = None
 
     def get(self, url, headers=None, timeout=None):
@@ -253,15 +257,16 @@ class _CapturingSession:
             "params": params,
             "headers": headers,
         }
-        return _FakeRequestResp(self._status)
+        return _FakeRequestResp(self._status, self._text)
 
 
 class _FakeRequestResp:
-    def __init__(self, status: int):
+    def __init__(self, status: int, text: str = ""):
         self.status = status
+        self._text = text
 
     async def text(self):
-        return ""
+        return self._text
 
     async def __aenter__(self):
         return self
@@ -320,3 +325,26 @@ async def test_rag_upsert_omits_callback_token_when_absent():
     call = session.request_call
     assert "callback_token" not in call["form"]
     assert call["form"]["callback_url"] == "https://cozy.example/cb"
+
+
+# ------------------------
+# 409: only a duplicate content is final
+# ------------------------
+@pytest.mark.asyncio
+async def test_rag_upsert_409_duplicate_content_is_skipped():
+    """Another file of the partition holds the content: nothing to retry."""
+    body = '{"detail": "[DOCUMENT_CONTENT_EXISTS]: This document already exists in partition \'p1\'."}'
+    session = _CapturingSession(status=409, text=body)
+    await rag_upsert(session, _upsert_msg(), is_new=True)  # must not raise
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("detail", [
+    "File 'f1' already exists in partition p1",
+    "File 'f1' is already being indexed in partition 'p1'.",
+])
+async def test_rag_upsert_other_409_is_retried(detail):
+    """A concurrent upload or an indexing still running: retry, then PUT if needed."""
+    session = _CapturingSession(status=409, text=json.dumps({"detail": detail}))
+    with pytest.raises(TransientError):
+        await rag_upsert(session, _upsert_msg(), is_new=True)

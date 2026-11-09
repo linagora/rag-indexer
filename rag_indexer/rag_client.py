@@ -73,6 +73,11 @@ async def get_producer_file(session: aiohttp.ClientSession, msg: IndexMessage) -
         raise TransientError(f"Network error fetching file_url: {e}") from e
 
 
+# Marker of the 409 openRAG answers when another file of the partition already
+# holds the same content (cozy-stack's classifyConflict reads the same one).
+_DUPLICATE_CONTENT_CODE = "DOCUMENT_CONTENT_EXISTS"
+
+
 # cozy-stack's callback handler reads only metadata.doc_rev (web/ai/index_status.go).
 # OpenRAG itself has no fixed field list: indexing_callback.py echoes every metadata
 # key except its own server-computed ones (UPLOAD_METADATA_SERVER_KEYS in
@@ -187,8 +192,14 @@ async def rag_upsert(
         if resp.status == 429 or resp.status >= 500:
             raise TransientError(f"RAG {method} {resp.status}: {resp_text}")
         if resp.status == 409:
-            log.warning("rag_upsert_conflict", method=method, file_id=msg.file_id, partition=msg.partition)
-            return
+            if _DUPLICATE_CONTENT_CODE in resp_text:
+                # openRAG holds one document per content in a partition: this file id
+                # will never be indexed, now or later.
+                log.info("rag_upsert_duplicate_content", method=method)
+                return
+            # The id is already known (a concurrent upload) or still being indexed:
+            # the retry reads it again and sends a PUT if its content differs.
+            raise TransientError(f"RAG {method} 409: {resp_text}")
         if resp.status >= 400:
             raise FatalError(f"RAG {method} {resp.status}: {resp_text}")
         return
