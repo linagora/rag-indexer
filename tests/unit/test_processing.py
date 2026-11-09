@@ -442,6 +442,24 @@ async def test_server_disconnected_on_get_raises_transient(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("error", [
+    aiohttp.ClientOSError(104, "Connection reset by peer"),
+    aiohttp.ClientPayloadError("Response payload is not completed"),
+])
+async def test_any_client_error_raises_transient(
+    error, monkeypatch, headers_base, aiohttp_session_stub
+):
+    """A reset connection or a truncated body is worth a retry, not the DLQ."""
+    async def fake_get(session, rag, partition, file_id):
+        raise error
+
+    monkeypatch.setattr(rag_client, "rag_get_file", fake_get)
+    msg = DummyMessage({**headers_base, "action": "upsert"})
+    with pytest.raises(TransientError, match="Network error"):
+        await process_message(msg, aiohttp_session_stub)
+
+
+@pytest.mark.asyncio
 async def test_unexpected_exception_raises_fatal(
     monkeypatch, headers_base, aiohttp_session_stub
 ):

@@ -128,7 +128,7 @@ async def process_message(
         raise
     except asyncio.TimeoutError as e:
         raise TransientError(f"Timeout: {e}") from e
-    except (aiohttp.ClientConnectorError, aiohttp.ServerDisconnectedError) as e:
+    except aiohttp.ClientError as e:
         raise TransientError(f"Network error: {e}") from e
     except Exception as e:
         # Unexpected error -- treat as fatal to avoid infinite retry
