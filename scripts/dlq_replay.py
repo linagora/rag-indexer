@@ -67,11 +67,9 @@ async def _replay_one(msg, channel, exchange):
 async def cmd_list(args: argparse.Namespace) -> None:
     """List all messages in the DLQ as JSON lines.
 
-    Bounded by the queue's message count at declare time, and messages are left
-    unacked (not nacked): nacking with requeue=True here would put a message right
-    back at the head of the queue, where the next get() picks it right back up --
-    an infinite loop on any non-empty queue. Leaving them unacked instead relies on
-    the connection close below to requeue everything in bulk, exactly once.
+    Messages stay unacked, never nacked: nack(requeue=True) puts a message back at
+    the head, where the next get() picks it up again, looping forever. Closing the
+    connection requeues them all at once.
     """
     connection = await aio_pika.connect(RABBITMQ_URL)
     async with connection:
@@ -117,10 +115,7 @@ async def cmd_replay(args: argparse.Namespace) -> None:
         queue = await channel.declare_queue(DLQ_NAME, passive=True)
         exchange = await channel.declare_exchange(EXCHANGE_NAME, passive=True)
 
-        # Bounded by the count at declare time; a message not replayed in this pass
-        # is left unacked and gets requeued in bulk when the connection closes below
-        # -- nack(requeue=True) mid-scan would put it back where the next get() picks
-        # it right back up, looping forever on a non-empty queue.
+        # Messages not replayed stay unacked, never nacked: see cmd_list.
         total = queue.declaration_result.message_count
 
         if args.all:

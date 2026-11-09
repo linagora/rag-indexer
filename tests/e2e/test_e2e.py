@@ -72,7 +72,7 @@ async def test_upsert_new_file(rmq, rag_base_url, rag_state):
 
 
 async def test_upsert_forwards_callback_url(rmq, rag_base_url, rag_state):
-    """Upsert with a callback_url header -> forwarded to RAG as a form field."""
+    """Upsert with a callback_url -> forwarded to RAG as a form field."""
     channel, exchange, queue = rmq
     body = b"Document with a status callback."
     md5 = _md5(body)
@@ -187,9 +187,7 @@ async def test_transient_error_on_unreachable_rag(rmq):
 # ---------------------------------------------------------------------------
 
 async def test_unpatched_happy_path(rmq, rag_base_url, rag_state):
-    """Verifies that extract_metadata reads from the body JSON and that the consumer
-    builds IndexMessage correctly, then forwards callback_url to OpenRAG.
-    """
+    """The fields of the JSON body reach OpenRAG, callback_url included."""
     channel, exchange, queue = rmq
     callback_url = "https://cozy.example/status/unpatched-happy"
     md5 = _md5(TESTFILE_CONTENT)
@@ -259,16 +257,13 @@ async def test_dlq_fail_callback(rmq, rag_base_url):
         msg = await asyncio.wait_for(queue.get(no_ack=False), timeout=5)
         async with aiohttp.ClientSession() as session:
             await publish_to_dlq(channel, msg, session)
-            # The failure callback is now a detached fire-and-forget task: let it
-            # finish while the session is still open, before this `with` closes it.
+            # The callback is a detached task: let it finish before the session closes.
             await asyncio.gather(*transport._callback_tasks)
         await msg.ack()
 
-        # Give the async callback POST a moment to complete.
         await asyncio.sleep(0.2)
 
-        # Error-status callback was POSTed to callback_url from the JSON body,
-        # carrying exactly partition, file_id, status="error", and an ISO timestamp.
+        # Error-status callback POSTed to the callback_url of the JSON body.
         assert len(callback_received) == 1
         cb = callback_received[0]
         assert set(cb.keys()) == {"partition", "file_id", "status", "timestamp", "metadata"}
@@ -341,8 +336,7 @@ async def test_body_read_after_retry_xdeath(rmq):
     assert msg is not None, "message was not dead-lettered into the e2e queue"
 
     try:
-        # Despite non-empty AMQP headers (broker-added x-death etc.), extract_metadata
-        # reads from body JSON because 'partition' is absent from the AMQP headers.
+        # The fields come from the body, whatever the broker added to the headers.
         metadata = extract_metadata(msg)
         assert metadata["partition"] == "cozy-retry-part"
         assert metadata["file_id"] == "cozy-retry-file"
@@ -441,8 +435,7 @@ async def test_dlq_callback_is_authenticated(rmq, rag_base_url):
         msg = await asyncio.wait_for(queue.get(no_ack=False), timeout=5)
         async with aiohttp.ClientSession() as session:
             await publish_to_dlq(channel, msg, session)
-            # The failure callback is now a detached fire-and-forget task: let it
-            # finish while the session is still open, before this `with` closes it.
+            # The callback is a detached task: let it finish before the session closes.
             await asyncio.gather(*transport._callback_tasks)
         await msg.ack()
 

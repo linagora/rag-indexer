@@ -8,8 +8,7 @@ class RagConn(BaseModel):
     @field_validator("base_url")
     @classmethod
     def _strip_trailing_slash(cls, v: str) -> str:
-        # Normalize once so URL building never produces '//' (cozy rag.url may
-        # carry a trailing slash).
+        # cozy's rag.url may end with '/': strip it so built URLs never hold '//'.
         return v.rstrip("/")
 
 

@@ -1,7 +1,7 @@
 """E2E tests: launch main() for real and verify the full pipeline.
 
-Messages are published via the producer's publish_message() — same code path
-as production. The RAG API is mocked at the HTTP level using aiohttp TestServer
+Messages are published via the producer's publish_message(), the JSON body
+cozy-stack sends. The RAG API is mocked at the HTTP level using aiohttp TestServer
 (no monkeypatching of internal functions). main() runs as a real asyncio task.
 Tests are skipped when the broker is not reachable.
 """
@@ -184,7 +184,7 @@ async def _publish(
     file_url: str | None = None,
     callback_url: str | None = None,
 ) -> None:
-    """Publish a message via the producer — same code path as production."""
+    """Publish a message via the producer, the way cozy-stack does."""
     fields = producer_mod.build_fields(
         action=action,
         partition="test-partition",

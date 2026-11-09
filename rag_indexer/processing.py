@@ -55,8 +55,6 @@ async def process_message(
 
     Raises TransientError for retryable failures and FatalError for permanent ones;
     unexpected exceptions are wrapped as FatalError to prevent infinite retry loops.
-
-    Pass `metadata` if already extracted by the caller to avoid a redundant parse.
     """
     try:
         fields = metadata if metadata is not None else extract_metadata(message)

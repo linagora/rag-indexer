@@ -11,9 +11,7 @@ from rag_indexer.transport import _file_metadata, publish_to_dlq
 
 
 async def _await_dlq_callbacks() -> None:
-    """The failure callback is now a detached fire-and-forget task; let it finish
-    before asserting on the session it posted to.
-    """
+    """The callback is a detached task: let it finish before asserting on it."""
     await asyncio.gather(*transport._callback_tasks)
 
 

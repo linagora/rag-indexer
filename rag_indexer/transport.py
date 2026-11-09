@@ -106,14 +106,8 @@ async def publish_to_dlq(
     session: aiohttp.ClientSession,
     metadata: dict | None = None,
 ) -> None:
-    """Publish message copy to the dead letter queue.
-
-    After the message safely lands in the DLQ, best-effort notify the cozy callback
-    (via the message's callback_url) that indexing failed.
-
-    Pass `metadata` if already extracted by the caller to avoid a redundant parse.
-    """
-    # Republish to the DLQ FIRST -- the message must reach the DLQ no matter what.
+    """Publish a copy of the message to the dead letter queue, then report "error"
+    to its callback_url."""
     # Keep the x-death headers: they record the retry history for inspection.
     real_headers = original_msg.headers or {}
     await channel.default_exchange.publish(
@@ -128,7 +122,6 @@ async def publish_to_dlq(
 
     if metadata is None:
         metadata = extract_metadata(original_msg)
-    # publish_to_dlq is only the terminal failure path, so the status is "error".
     send_status_callback(session, metadata, "error")
 
 

@@ -14,8 +14,7 @@ from aiohttp.test_utils import TestServer
 from rag_indexer.processing import process_message
 from tests.integration.conftest import _docker_is_available, _amqp_is_responsive
 
-# Static bytes served by the RAG stub's /testfile endpoint, the file_url target
-# that must provide a file_url for the consumer to download file content.
+# Served by the RAG stub's /testfile endpoint, the default file_url target.
 TESTFILE_CONTENT = b"e2e test file content"
 
 E2E_EXCHANGE = "e2e.test.topic"

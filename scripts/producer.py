@@ -85,10 +85,7 @@ async def publish_message(
     routing_key: str,
     fields: dict,
 ) -> None:
-    """Publish the fields as a JSON body, the way cozy-stack does.
-
-    The consumer downloads the file content from file_url.
-    """
+    """Publish the fields as a JSON body, the way cozy-stack does."""
     try:
         connection = await aio_pika.connect_robust(RABBITMQ_URL)
     except AMQPConnectionError as e:
