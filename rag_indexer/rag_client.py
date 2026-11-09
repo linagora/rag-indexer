@@ -69,7 +69,7 @@ async def get_producer_file(session: aiohttp.ClientSession, msg: IndexMessage) -
         raise
     except asyncio.TimeoutError as e:
         raise TransientError(f"Timeout fetching file_url: {e}") from e
-    except (aiohttp.ClientConnectorError, aiohttp.ServerDisconnectedError) as e:
+    except aiohttp.ClientError as e:
         raise TransientError(f"Network error fetching file_url: {e}") from e
 
 
