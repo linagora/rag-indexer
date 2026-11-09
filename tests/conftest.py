@@ -16,9 +16,11 @@ class FakeContextResp:
     def __init__(self, status: int, body: bytes):
         self.status = status
         self._body = body
+        self.content = self
 
-    async def read(self):
-        return self._body
+    async def iter_chunked(self, size):
+        for i in range(0, len(self._body), size):
+            yield self._body[i:i + size]
 
     async def __aenter__(self):
         return self

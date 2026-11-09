@@ -1,3 +1,4 @@
+import io
 import json
 
 import pytest
@@ -40,8 +41,9 @@ async def test_get_producer_file_reads_inside_context():
     msg = _upsert_msg(
         content=ContentSpec(file_url="http://example.com/file.bin"),
     )
-    result = await get_producer_file(fake_session, msg)
-    assert result == expected_bytes
+    dest = io.BytesIO()
+    await get_producer_file(fake_session, msg, dest)
+    assert dest.getvalue() == expected_bytes
 
 
 # ------------------------
@@ -114,8 +116,9 @@ async def test_get_producer_file_no_auth_header():
             file_url="http://example.com/files/downloads/sekret/secure.bin",
         ),
     )
-    result = await get_producer_file(fake_session, msg)
-    assert result == expected_bytes
+    dest = io.BytesIO()
+    await get_producer_file(fake_session, msg, dest)
+    assert dest.getvalue() == expected_bytes
 
 
 # ------------------------
