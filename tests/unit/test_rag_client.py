@@ -7,10 +7,25 @@ from rag_indexer.rag_client import (
     get_producer_file,
     build_metadata,
     callback_metadata,
+    metadata_dict,
     rag_upsert,
 )
 from rag_indexer.errors import TransientError
 from tests.conftest import FakeContextResp, FakeSession
+
+
+def _upsert_msg(**kwargs) -> IndexMessage:
+    """An upsert message with every required field, overridable."""
+    fields = {
+        "action": "upsert",
+        "partition": "p1",
+        "file_id": "f1",
+        "name": "doc.txt",
+        "md5sum": "d41d8cd98f00b204e9800998ecf8427e",
+        "rag": RagConn(base_url="http://rag:8000", api_key="rag-key"),
+        "content": ContentSpec(file_url="http://cozy/files/downloads/sekret/doc.txt"),
+    }
+    return IndexMessage(**{**fields, **kwargs})
 
 
 # ------------------------
@@ -22,11 +37,7 @@ async def test_get_producer_file_reads_inside_context():
     fake_resp = FakeContextResp(status=200, body=expected_bytes)
     fake_session = FakeSession(fake_resp)
 
-    msg = IndexMessage(
-        action="upsert",
-        partition="p1",
-        file_id="f1",
-        rag=RagConn(base_url="http://rag:8000", api_key="key"),
+    msg = _upsert_msg(
         content=ContentSpec(file_url="http://example.com/file.bin"),
     )
     result = await get_producer_file(fake_session, msg)
@@ -37,11 +48,7 @@ async def test_get_producer_file_reads_inside_context():
 # BUGF-02: Metadata merge
 # ------------------------
 def test_build_metadata_merges_app_metadata():
-    msg = IndexMessage(
-        action="upsert",
-        partition="p1",
-        file_id="f1",
-        rag=RagConn(base_url="http://rag:8000", api_key="key"),
+    msg = _upsert_msg(
         doc_rev="3-abc",
         doctype="pdf",
         app_metadata={"custom_key": "custom_value", "author": "test"},
@@ -54,11 +61,7 @@ def test_build_metadata_merges_app_metadata():
 
 
 def test_build_metadata_without_app_metadata():
-    msg = IndexMessage(
-        action="upsert",
-        partition="p1",
-        file_id="f1",
-        rag=RagConn(base_url="http://rag:8000", api_key="key"),
+    msg = _upsert_msg(
         doc_rev="3-abc",
         doctype="pdf",
     )
@@ -71,11 +74,7 @@ def test_build_metadata_without_app_metadata():
 
 def test_build_metadata_exposes_md5sum_as_its_own_key():
     """cozy-stack's indexedMD5Sum reads metadata["md5sum"] on the existence GET."""
-    msg = IndexMessage(
-        action="upsert",
-        partition="p1",
-        file_id="f1",
-        rag=RagConn(base_url="http://rag:8000", api_key="key"),
+    msg = _upsert_msg(
         doc_rev="3-abc",
         md5sum="d41d8cd98f00b204e9800998ecf8427e",
     )
@@ -88,11 +87,7 @@ def test_build_metadata_never_substitutes_md5sum_for_doc_rev():
     """A md5sum has generation 0 for cozy's revision.Generation: every later
     status would be silently dropped as outdated. Empty is the only safe value.
     """
-    msg = IndexMessage(
-        action="upsert",
-        partition="p1",
-        file_id="f1",
-        rag=RagConn(base_url="http://rag:8000", api_key="key"),
+    msg = _upsert_msg(
         md5sum="d41d8cd98f00b204e9800998ecf8427e",
     )
     meta = build_metadata(msg)
@@ -114,11 +109,7 @@ async def test_get_producer_file_no_auth_header():
     fake_resp = FakeContextResp(status=200, body=expected_bytes)
     fake_session = FakeSession(fake_resp)
 
-    msg = IndexMessage(
-        action="upsert",
-        partition="p1",
-        file_id="f1",
-        rag=RagConn(base_url="http://rag:8000", api_key="key"),
+    msg = _upsert_msg(
         content=ContentSpec(
             file_url="http://example.com/files/downloads/sekret/secure.bin",
         ),
@@ -132,11 +123,7 @@ async def test_get_producer_file_no_auth_header():
 # ------------------------
 def test_build_metadata_app_metadata_overrides_base_keys():
     """app_metadata still wins on the descriptive fields."""
-    msg = IndexMessage(
-        action="upsert",
-        partition="p1",
-        file_id="f1",
-        rag=RagConn(base_url="http://rag:8000", api_key="key"),
+    msg = _upsert_msg(
         doc_rev="3-abc",
         doctype="pdf",
         app_metadata={"doctype": "custom_doctype"},
@@ -147,11 +134,7 @@ def test_build_metadata_app_metadata_overrides_base_keys():
 
 def test_build_metadata_app_metadata_cannot_override_doc_rev():
     """Callbacks are ordered on doc_rev: application metadata must not displace it."""
-    msg = IndexMessage(
-        action="upsert",
-        partition="p1",
-        file_id="f1",
-        rag=RagConn(base_url="http://rag:8000", api_key="key"),
+    msg = _upsert_msg(
         doc_rev="3-abc",
         app_metadata={"doc_rev": "9-forged"},
     )
@@ -161,11 +144,7 @@ def test_build_metadata_app_metadata_cannot_override_doc_rev():
 
 def test_build_metadata_empty_dict_app_metadata():
     """app_metadata as empty dict should produce same result as no app_metadata."""
-    msg = IndexMessage(
-        action="upsert",
-        partition="p1",
-        file_id="f1",
-        rag=RagConn(base_url="http://rag:8000", api_key="key"),
+    msg = _upsert_msg(
         doc_rev="3-abc",
         doctype="pdf",
         app_metadata={},
@@ -179,11 +158,7 @@ def test_build_metadata_empty_dict_app_metadata():
 
 def test_build_metadata_none_values_in_app_metadata():
     """app_metadata with None values should preserve them in the merge."""
-    msg = IndexMessage(
-        action="upsert",
-        partition="p1",
-        file_id="f1",
-        rag=RagConn(base_url="http://rag:8000", api_key="key"),
+    msg = _upsert_msg(
         doc_rev="3-abc",
         app_metadata={"extra": None},
     )
@@ -194,13 +169,7 @@ def test_build_metadata_none_values_in_app_metadata():
 
 def test_build_metadata_no_doc_rev_no_md5sum():
     """Neither field set -- both fall back to the empty string, never to each other."""
-    msg = IndexMessage(
-        action="upsert",
-        partition="p1",
-        file_id="f1",
-        rag=RagConn(base_url="http://rag:8000", api_key="key"),
-    )
-    meta = build_metadata(msg)
+    meta = metadata_dict(doc_rev=None, md5sum=None, datetime=None, doctype=None, app_metadata=None)
     assert meta["doc_rev"] == ""
     assert meta["md5sum"] == ""
 
@@ -212,11 +181,7 @@ def test_callback_metadata_narrows_to_what_cozy_reads():
     its own server-computed ones, so it also carries md5sum and app_metadata.
     """
     upsert_meta = build_metadata(
-        IndexMessage(
-            action="upsert",
-            partition="p1",
-            file_id="f1",
-            rag=RagConn(base_url="http://rag:8000", api_key="key"),
+        _upsert_msg(
             doc_rev="3-abc",
             md5sum="d41d8cd98f00b204e9800998ecf8427e",
             datetime="2026-01-15T12:00:00Z",
@@ -275,24 +240,13 @@ class _FakeRequestResp:
         pass
 
 
-def _upsert_msg(**kwargs) -> IndexMessage:
-    return IndexMessage(
-        action="upsert",
-        partition="p1",
-        file_id="f1",
-        name="doc.txt",
-        rag=RagConn(base_url="http://rag:8000", api_key="rag-key"),
-        content=ContentSpec(file_url="http://cozy/files/downloads/sekret/doc.txt"),
-        **kwargs,
-    )
-
-
 @pytest.mark.asyncio
 async def test_rag_upsert_forwards_callback_token_as_form_field():
     session = _CapturingSession()
     msg = _upsert_msg(
         callback_url="https://cozy.example/ai/index/status",
         callback_token="cozy-secret-token",
+        doc_rev="3-abc",
     )
     await rag_upsert(session, msg, is_new=True)
 
@@ -320,7 +274,7 @@ async def test_rag_upsert_never_puts_callback_token_in_query_string():
 async def test_rag_upsert_omits_callback_token_when_absent():
     """Optional field: no callback_token means no such form field."""
     session = _CapturingSession()
-    await rag_upsert(session, _upsert_msg(callback_url="https://cozy.example/cb"), is_new=True)
+    await rag_upsert(session, _upsert_msg(callback_url="https://cozy.example/cb", doc_rev="3-abc"), is_new=True)
 
     call = session.request_call
     assert "callback_token" not in call["form"]

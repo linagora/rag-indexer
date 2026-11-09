@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import os
 
@@ -280,7 +281,8 @@ async def publish_upsert_msg(
     partition: str,
     file_id: str,
     action: str = "upsert",
-    md5sum: str = "",
+    md5sum: str = hashlib.md5(TESTFILE_CONTENT).hexdigest(),
+    doc_rev: str = "1-abc",
     name: str = "test.txt",
     content_type: str = "text/plain",
     callback_url: str = "",
@@ -303,6 +305,7 @@ async def publish_upsert_msg(
         "rag_api_key": "e2e-test-key",
         "file_url": f"{rag_base_url}/testfile",
         "md5sum": md5sum,
+        "doc_rev": doc_rev,
         "name": name,
         "content_type": content_type,
         **extra,

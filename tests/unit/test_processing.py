@@ -516,6 +516,7 @@ async def test_callback_token_extracted_from_body(
         "action": "upsert",
         "callback_url": "https://cozy.example/ai/index/status",
         "callback_token": "tok-cozy-json",
+        "doc_rev": "3-abc",
     }
     msg = await _capture_upsert_msg(
         monkeypatch,
@@ -545,9 +546,28 @@ async def test_callback_token_absent_is_none(
     monkeypatch, headers_base, aiohttp_session_stub
 ):
     """Optional field: a message without callback_token still processes."""
-    headers = {**headers_base, "action": "upsert", "callback_url": "https://cozy.example/cb"}
+    headers = {**headers_base, "action": "upsert", "callback_url": "https://cozy.example/cb", "doc_rev": "3-abc"}
     msg = await _capture_upsert_msg(
         monkeypatch, DummyMessage(headers), aiohttp_session_stub
     )
     assert msg.callback_token is None
     assert msg.callback_url == "https://cozy.example/cb"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["name", "md5sum", "file_url"])
+async def test_upsert_without_required_field_is_invalid(field, headers_base, aiohttp_session_stub):
+    """Without a name openRAG cannot pick a parser, without a md5sum the content
+    is never compared, without a file_url there is nothing to index."""
+    fields = {**headers_base, "action": "upsert"}
+    del fields[field]
+    with pytest.raises(FatalError, match=field):
+        await process_message(DummyMessage(fields), aiohttp_session_stub)
+
+
+@pytest.mark.asyncio
+async def test_callback_url_without_doc_rev_is_invalid(headers_base, aiohttp_session_stub):
+    """cozy-stack refuses a status callback that carries no doc_rev."""
+    fields = {**headers_base, "action": "upsert", "callback_url": "https://cozy.example/cb"}
+    with pytest.raises(FatalError, match="doc_rev"):
+        await process_message(DummyMessage(fields), aiohttp_session_stub)

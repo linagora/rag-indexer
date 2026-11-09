@@ -192,7 +192,8 @@ async def _publish(
         rag_api_key="",
         content_type=content_type,
         name=name,
-        file_url=file_url,
+        md5sum="d41d8cd98f00b204e9800998ecf8427e",
+        file_url=file_url or f"{rag_base_url}/testfile",
     )
     await producer_mod.publish_message(
         routing_key=_PUBLISH_ROUTING_KEY,

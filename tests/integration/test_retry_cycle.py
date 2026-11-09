@@ -38,7 +38,7 @@ async def _consume_one(queue, timeout: float = 15.0) -> aio_pika.IncomingMessage
 
 
 def _make_message(
-    file_id: str, *, name: str, content_type: str = "text/markdown", md5sum: str | None = None
+    file_id: str, *, name: str, content_type: str = "text/markdown", md5sum: str = "d41d8cd98f00b204e9800998ecf8427e"
 ) -> Message:
     fields = {
         "action": "upsert",
@@ -48,9 +48,9 @@ def _make_message(
         "rag_api_key": "",
         "content_type": content_type,
         "name": name,
+        "md5sum": md5sum,
+        "file_url": "http://fake-cozy/files/downloads/sekret/doc",
     }
-    if md5sum:
-        fields["md5sum"] = md5sum
     return Message(
         json.dumps(fields).encode(),
         content_type="application/json",
@@ -131,6 +131,9 @@ async def test_transient_error_exhausts_retries_to_dlq(rmq_channel, monkeypatch)
         "rag_base_url": "http://fake-rag:8000",
         "rag_api_key": "test-key",
         "content_type": "text/plain",
+        "name": "exhausted.txt",
+        "md5sum": "d41d8cd98f00b204e9800998ecf8427e",
+        "file_url": "http://fake-cozy/files/downloads/sekret/doc",
     }).encode()
     await exchange.publish(
         Message(body, delivery_mode=DeliveryMode.PERSISTENT),
