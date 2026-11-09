@@ -50,6 +50,6 @@ Producer -> RabbitMQ (topic exchange) -> rag-indexer -> RAG API
 
 ## Error Classification
 
-- `TransientError` — HTTP 429, 5xx, timeouts, network errors -> retry queue
-- `FatalError` — HTTP 4xx (except 429), unknown actions, unexpected errors -> DLQ
+- `TransientError`: HTTP 429, 5xx, timeouts, network errors -> retry queue
+- `FatalError`: HTTP 4xx (except 429), unknown actions, unexpected errors -> DLQ
 - `ValidationError` (Pydantic) -> DLQ directly

@@ -37,12 +37,38 @@ All settings are via environment variables (see `env.example`):
 | Variable | Default | Description |
 |---|---|---|
 | `RABBITMQ_URL` | `amqp://guest:guest@localhost:5672/` | AMQP connection string |
-| `RAG_BASE_URL` | — | RAG API base URL |
-| `RAG_API_KEY` | — | RAG API bearer token |
+| `RAG_BASE_URL` | — | RAG API base URL, for `scripts/producer.py` only (the consumer reads it from each message) |
+| `RAG_API_KEY` | — | RAG API bearer token, for `scripts/producer.py` only |
 | `CONCURRENCY` | `1` | Max messages processed in parallel |
 | `HTTP_TIMEOUT` | `60` | HTTP request timeout (seconds) |
+| `CALLBACK_TIMEOUT` | `5` | Timeout of a status callback to cozy-stack (seconds) |
 | `RETRY_INTERVALS` | `30000,300000,3600000` | Comma-separated retry delays (ms) |
 | `LOG_LEVEL` | `INFO` | Logging level |
+
+## Message format
+
+The body is a JSON object, the way cozy-stack publishes it (no custom AMQP headers):
+
+| Field | Required | Description |
+|---|---|---|
+| `action` | yes | `upsert` or `delete` |
+| `partition`, `file_id` | yes | Where the file lives in openRAG |
+| `rag_base_url`, `rag_api_key` | yes | The openRAG server of the instance |
+| `name` | upsert | File name: openRAG picks its parser from the extension |
+| `md5sum` | upsert | Hex digest: the file is uploaded again only when it differs from the indexed one |
+| `file_url` | upsert | Self-authenticating download URL of the content |
+| `doc_rev` | with `callback_url` | Revision of the file, echoed back on the status callback |
+| `callback_url`, `callback_token` | no | Where the indexing status is posted, and the bearer sent with it |
+| `content_type`, `doctype`, `datetime`, `app_metadata` | no | Stored with the file in openRAG |
+
+The status callback is the payload of cozy-stack's `POST /ai/index/status`.
+openRAG posts `success` or `error` once it has indexed the file; the indexer itself
+posts `error` when a message lands in the DLQ, and `notsupported` when openRAG refuses
+the format (the message is then acked).
+
+openRAG refuses a `callback_url` on a private address unless
+`INDEXING_CALLBACK_ALLOW_PRIVATE_URLS=true`: set it on a dev stack whose cozy-stack
+runs locally (`http://cozy.localhost:8080`), or every upload is answered 400.
 
 ## Docker
 
