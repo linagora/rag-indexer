@@ -183,8 +183,8 @@ async def test_publish_to_dlq_without_token_sends_no_auth_header():
 
 
 @pytest.mark.asyncio
-async def test_publish_to_dlq_reads_callback_token_from_cozy_json_body():
-    """cozy-json wire format: token read from the body, not the AMQP headers."""
+async def test_publish_to_dlq_reads_callback_token_from_body():
+    """The token is read from the message body when no metadata is passed."""
     channel, session = _FakeChannel(), _FakeCallbackSession()
     body = json.dumps({
         "partition": "p1",

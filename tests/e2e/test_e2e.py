@@ -20,8 +20,8 @@ from rag_indexer.transport import publish_to_dlq
 from tests.e2e.conftest import (
     publish_msg,
     consume_and_process,
-    consume_and_process_cozy_json,
-    publish_cozy_json_msg,
+    consume_unpatched,
+    publish_upsert_msg,
     TESTFILE_CONTENT,
     E2E_EXCHANGE,
 )
@@ -59,7 +59,7 @@ async def test_upsert_new_file(rmq, rag_base_url, rag_state):
     md5 = _md5(body)
     headers = _make_upsert_headers("e2e-test-auto", "doc-1", md5, rag_base_url)
 
-    await publish_msg(exchange, body, headers)
+    await publish_msg(exchange, headers)
     await consume_and_process(queue, rag_base_url)
 
     # Verify file was stored in RAG
@@ -79,7 +79,7 @@ async def test_upsert_forwards_callback_url(rmq, rag_base_url, rag_state):
     headers = _make_upsert_headers("e2e-test-auto", "doc-cb", md5, rag_base_url)
     headers["callback_url"] = callback_url
 
-    await publish_msg(exchange, body, headers)
+    await publish_msg(exchange, headers)
     await consume_and_process(queue, rag_base_url)
 
     # File stored AND the callback_url reached the RAG stub as a form field.
@@ -98,7 +98,7 @@ async def test_idempotent_skip(rmq, rag_base_url, rag_state):
     # Record call count before
     calls_before = len([c for c in rag_state.call_log if c["method"] in ("POST", "PUT")])
 
-    await publish_msg(exchange, body, headers)
+    await publish_msg(exchange, headers)
     await consume_and_process(queue, rag_base_url)
 
     # No POST or PUT should have been made (only GET for the md5sum check)
@@ -113,7 +113,7 @@ async def test_update_existing_file(rmq, rag_base_url, rag_state):
     new_md5 = _md5(new_body)
     headers = _make_upsert_headers("e2e-test-auto", "doc-1", new_md5, rag_base_url)
 
-    await publish_msg(exchange, new_body, headers)
+    await publish_msg(exchange, headers)
     await consume_and_process(queue, rag_base_url)
 
     # Verify file was updated in RAG
@@ -135,7 +135,7 @@ async def test_delete_file(rmq, rag_base_url):
         "rag_api_key": "",
     }
 
-    await publish_msg(exchange, b"", headers)
+    await publish_msg(exchange, headers)
     await consume_and_process(queue, rag_base_url)
 
     # Verify file is gone
@@ -155,7 +155,7 @@ async def test_delete_nonexistent(rmq, rag_base_url):
         "rag_api_key": "",
     }
 
-    await publish_msg(exchange, b"", headers)
+    await publish_msg(exchange, headers)
     # Should not raise — 404 is treated as success
     await consume_and_process(queue, rag_base_url)
 
@@ -174,39 +174,37 @@ async def test_transient_error_on_unreachable_rag(rmq):
         "rag_api_key": "",
     }
 
-    await publish_msg(exchange, body, headers)
+    await publish_msg(exchange, headers)
     with pytest.raises(TransientError, match="[Nn]etwork error|[Cc]onnect"):
         await consume_and_process(queue, "http://localhost:1")
 
 
 # ---------------------------------------------------------------------------
-# Cozy-json format tests
+# Messages published with every field set at publish time
 # ---------------------------------------------------------------------------
 
-async def test_cozy_json_happy_path(rmq, rag_base_url, rag_state):
-    """Cozy-json format: all business fields in JSON body, AMQP headers empty.
-
-    Verifies that extract_metadata reads from the body JSON and that the consumer
+async def test_unpatched_happy_path(rmq, rag_base_url, rag_state):
+    """Verifies that extract_metadata reads from the body JSON and that the consumer
     builds IndexMessage correctly, then forwards callback_url to OpenRAG.
     """
     channel, exchange, queue = rmq
-    callback_url = "https://cozy.example/status/cozy-json-happy"
+    callback_url = "https://cozy.example/status/unpatched-happy"
     md5 = _md5(TESTFILE_CONTENT)
 
-    await publish_cozy_json_msg(
+    await publish_upsert_msg(
         exchange,
         rag_base_url,
-        partition="e2e-cozy-json",
+        partition="e2e-unpatched",
         file_id="cozy-happy-doc",
         md5sum=md5,
         callback_url=callback_url,
     )
 
-    await consume_and_process_cozy_json(queue)
+    await consume_unpatched(queue)
 
     # File stored in RAG with correct md5sum
     async with aiohttp.ClientSession() as session:
-        async with session.get(f"{rag_base_url}/partition/e2e-cozy-json/file/cozy-happy-doc") as resp:
+        async with session.get(f"{rag_base_url}/partition/e2e-unpatched/file/cozy-happy-doc") as resp:
             assert resp.status == 200
             data = await resp.json()
             assert data["metadata"]["md5sum"] == md5
@@ -217,8 +215,8 @@ async def test_cozy_json_happy_path(rmq, rag_base_url, rag_state):
     assert posts[-1].get("callback_url") == callback_url
 
 
-async def test_cozy_json_dlq_fail(rmq, rag_base_url):
-    """Cozy-json format + DLQ: publish_to_dlq reads callback_url/partition/file_id from body.
+async def test_dlq_fail_callback(rmq, rag_base_url):
+    """DLQ: publish_to_dlq reads callback_url/partition/file_id from body.
 
     Verifies that:
     - The error-status POST is sent to the callback_url found in the JSON body.
@@ -244,7 +242,7 @@ async def test_cozy_json_dlq_fail(rmq, rag_base_url):
         # Declare a test DLQ queue so publish_to_dlq has somewhere to land.
         dlq_queue = await channel.declare_queue(DLQ_NAME, durable=False, auto_delete=True)
 
-        body_json = await publish_cozy_json_msg(
+        body_json = await publish_upsert_msg(
             exchange,
             rag_base_url,
             partition="e2e-cozy-dlq",
@@ -290,16 +288,8 @@ async def test_cozy_json_dlq_fail(rmq, rag_base_url):
         await callback_server.close()
 
 
-async def test_cozy_json_retry_xdeath_fallback(rmq):
-    """Cozy-json format after retry: x-death AMQP headers don't block body JSON parsing.
-
-    RabbitMQ adds x-death (and related) headers when dead-lettering through TTL retry
-    queues. A naive 'if not headers: parse body' heuristic would silently fall back to
-    the (empty of business fields) AMQP headers and lose all metadata. This test
-    publishes a cozy-json message pre-loaded with realistic x-death headers and verifies
-    that extract_metadata still reads partition/file_id from the JSON body, while
-    get_retry_count still reads x-death from the real AMQP headers.
-    """
+async def test_body_read_after_retry_xdeath(rmq):
+    """After a retry cycle, fields still come from the body and x-death from the headers."""
     channel, exchange, queue = rmq
 
     # RabbitMQ clears any client-supplied x-death header (it is broker-managed and
@@ -318,7 +308,7 @@ async def test_cozy_json_retry_xdeath_fallback(rmq):
         },
     )
 
-    # Publish a cozy-json message (business fields in body) into the retry queue.
+    # Publish a message into the retry queue.
     payload = {
         "action": "upsert",
         "partition": "cozy-retry-part",
@@ -362,11 +352,11 @@ async def test_cozy_json_retry_xdeath_fallback(rmq):
 
 
 # ---------------------------------------------------------------------------
-# callback_token: propagation in both wire formats
+# callback_token propagation
 # ---------------------------------------------------------------------------
 
 async def test_upsert_forwards_callback_token(rmq, rag_base_url, rag_state):
-    """'headers' format: callback_token -> forwarded to RAG as a form field."""
+    """callback_token -> forwarded to RAG as a form field."""
     channel, exchange, queue = rmq
     body = b"Document with an authenticated status callback."
     md5 = _md5(body)
@@ -376,7 +366,7 @@ async def test_upsert_forwards_callback_token(rmq, rag_base_url, rag_state):
     headers["callback_url"] = callback_url
     headers["callback_token"] = callback_token
 
-    await publish_msg(exchange, body, headers)
+    await publish_msg(exchange, headers)
     await consume_and_process(queue, rag_base_url)
 
     posts = [
@@ -396,7 +386,7 @@ async def test_upsert_without_callback_token_still_works(rmq, rag_base_url, rag_
     headers = _make_upsert_headers("e2e-test-auto", "doc-no-token", md5, rag_base_url)
     headers["callback_url"] = "https://cozy.example/ai/index/status"
 
-    await publish_msg(exchange, body, headers)
+    await publish_msg(exchange, headers)
     await consume_and_process(queue, rag_base_url)
 
     posts = [
@@ -413,33 +403,7 @@ async def test_upsert_without_callback_token_still_works(rmq, rag_base_url, rag_
             assert resp.status == 200
 
 
-async def test_cozy_json_forwards_callback_token(rmq, rag_base_url, rag_state):
-    """'cozy-json' format: callback_token read from the body, forwarded to OpenRAG."""
-    channel, exchange, queue = rmq
-    callback_token = "e2e-cozy-json-token"
-    md5 = _md5(TESTFILE_CONTENT)
-
-    await publish_cozy_json_msg(
-        exchange,
-        rag_base_url,
-        partition="e2e-cozy-json",
-        file_id="cozy-token-doc",
-        md5sum=md5,
-        callback_url="https://cozy.example/ai/index/status",
-        callback_token=callback_token,
-    )
-
-    await consume_and_process_cozy_json(queue)
-
-    posts = [
-        c for c in rag_state.call_log
-        if c["method"] == "POST" and c["file_id"] == "cozy-token-doc"
-    ]
-    assert posts, "Expected a POST for cozy-token-doc"
-    assert posts[-1].get("callback_token") == callback_token
-
-
-async def test_cozy_json_dlq_callback_is_authenticated(rmq, rag_base_url):
+async def test_dlq_callback_is_authenticated(rmq, rag_base_url):
     """DLQ failure callback carries the bearer token, never in the URL."""
     channel, exchange, queue = rmq
     callback_token = "e2e-dlq-token"
@@ -462,7 +426,7 @@ async def test_cozy_json_dlq_callback_is_authenticated(rmq, rag_base_url):
         callback_url = str(callback_server.make_url("/cb-dlq-auth"))
         dlq_queue = await channel.declare_queue(DLQ_NAME, durable=False, auto_delete=True)
 
-        await publish_cozy_json_msg(
+        await publish_upsert_msg(
             exchange,
             rag_base_url,
             partition="e2e-cozy-dlq-auth",

@@ -32,7 +32,7 @@ Producer -> RabbitMQ (topic exchange) -> rag-indexer -> RAG API
 **Message flow through the code:**
 
 1. `main.py` — Entry point. Connects to RabbitMQ, starts health server, consumes messages with concurrency control via `asyncio.Semaphore`. Routes errors to retry queues or DLQ.
-2. `processing.py` — Core business logic. `extract_metadata()` reads the business fields whatever the wire format, then parses them into `IndexMessage`; handles upsert (GET-then-PUT with an md5sum check) and delete paths. Classifies errors as `TransientError` (retryable) or `FatalError` (goes to DLQ).
+2. `processing.py` — Core business logic. `extract_metadata()` reads the business fields from the JSON body, then parses them into `IndexMessage`; handles upsert (GET-then-PUT with an md5sum check) and delete paths. Classifies errors as `TransientError` (retryable) or `FatalError` (goes to DLQ).
 3. `rag_client.py` — HTTP client for the RAG API (GET file, DELETE, UPSERT with multipart form).
 4. `transport.py` — RabbitMQ topology declaration (main queue, retry queues, DLQ), publish helpers, health/metrics HTTP server, shutdown coordination.
 5. `config.py` — All configuration from env vars. Retry queue names are generated from TTL intervals (e.g., `rag.index.retry.30s.q`).
@@ -40,7 +40,7 @@ Producer -> RabbitMQ (topic exchange) -> rag-indexer -> RAG API
 
 **Key design decisions:**
 
-- Two wire formats coexist: `headers` (business fields as AMQP headers) and `cozy-json` (all fields JSON-encoded in the body, for producers that cannot set custom headers). `extract_metadata()` tells them apart on the presence of `partition`, and everything above it is format-agnostic.
+- Business fields are a JSON object in the message body, the format cozy-stack's publisher sends. AMQP headers only carry what the broker adds (`x-death`).
 - File content is always downloaded from `file_url`; the AMQP body never carries the binary. The URL is self-authenticating, so no bearer is sent with it.
 - RAG connection info (`rag_base_url`, `rag_api_key`) comes per-message, not from global config.
 - Retry count is derived from `x-death` header entries with `reason=expired`, not a custom counter.

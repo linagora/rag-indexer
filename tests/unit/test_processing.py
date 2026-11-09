@@ -35,7 +35,7 @@ async def test_delete_200_ok(monkeypatch, headers_base, aiohttp_session_stub):
     monkeypatch.setattr(rag_client, "rag_delete", fake_delete)
 
     headers = {**headers_base, "action": "delete"}
-    msg = DummyMessage(body=b"", headers=headers)
+    msg = DummyMessage(headers)
     await process_message(msg, aiohttp_session_stub)
     assert call_log.get("called") is True
 
@@ -48,7 +48,7 @@ async def test_delete_404_ok(monkeypatch, headers_base, aiohttp_session_stub):
     monkeypatch.setattr(rag_client, "rag_delete", fake_delete)
 
     headers = {**headers_base, "action": "delete"}
-    msg = DummyMessage(body=b"", headers=headers)
+    msg = DummyMessage(headers)
     # 404 doit passer sans exception
     await process_message(msg, aiohttp_session_stub)
 
@@ -63,7 +63,7 @@ async def test_delete_5xx_retry_exception(
     monkeypatch.setattr(rag_client, "rag_delete", fake_delete)
 
     headers = {**headers_base, "action": "delete"}
-    msg = DummyMessage(body=b"", headers=headers)
+    msg = DummyMessage(headers)
     with pytest.raises(TransientError) as ei:
         await process_message(msg, aiohttp_session_stub)
     assert "RAG delete 503" in str(ei.value)
@@ -82,7 +82,7 @@ async def test_upsert_get_5xx_raises_transient_error(
     monkeypatch.setattr(rag_client, "rag_get_file", fake_get)
 
     headers = {**headers_base, "action": "upsert", "md5sum": "aaa"}
-    msg = DummyMessage(body=b"data", headers=headers)
+    msg = DummyMessage(headers)
 
     with pytest.raises(TransientError) as ei:
         await process_message(msg, aiohttp_session_stub)
@@ -99,7 +99,7 @@ async def test_upsert_get_4xx_raises_fatal_error(
     monkeypatch.setattr(rag_client, "rag_get_file", fake_get)
 
     headers = {**headers_base, "action": "upsert", "md5sum": "aaa"}
-    msg = DummyMessage(body=b"data", headers=headers)
+    msg = DummyMessage(headers)
 
     with pytest.raises(FatalError) as ei:
         await process_message(msg, aiohttp_session_stub)
@@ -137,7 +137,7 @@ async def test_upsert_new_on_404_triggers_post(
         "name": "doc.pdf",
         "doctype": "pdf",
     }
-    msg = DummyMessage(body=body, headers=headers)
+    msg = DummyMessage(headers)
 
     await process_message(msg, aiohttp_session_stub)
 
@@ -170,7 +170,7 @@ async def test_upsert_update_on_md5_change_triggers_put(
 
     body = b"PDFDATA"
     headers = {**headers_base, "action": "upsert", "md5sum": "NEW"}
-    msg = DummyMessage(body=body, headers=headers)
+    msg = DummyMessage(headers)
 
     await process_message(msg, aiohttp_session_stub)
 
@@ -197,7 +197,7 @@ async def test_upsert_same_md5_new_doc_rev_skips(
     monkeypatch.setattr(rag_client, "rag_upsert", fake_upsert)
 
     headers = {**headers_base, "action": "upsert", "md5sum": "SAME", "doc_rev": "4-new"}
-    msg = DummyMessage(body=b"ignored", headers=headers)
+    msg = DummyMessage(headers)
 
     await process_message(msg, aiohttp_session_stub)
     assert called["upsert"] is False
@@ -222,7 +222,7 @@ async def test_upsert_reads_legacy_version_key_as_md5sum(
     monkeypatch.setattr(rag_client, "rag_upsert", fake_upsert)
 
     headers = {**headers_base, "action": "upsert", "md5sum": "SAME"}
-    msg = DummyMessage(body=b"ignored", headers=headers)
+    msg = DummyMessage(headers)
 
     await process_message(msg, aiohttp_session_stub)
     assert called["upsert"] is False
@@ -244,7 +244,7 @@ async def test_upsert_forwards_doc_rev_from_the_message(
     monkeypatch.setattr(rag_client, "rag_upsert", fake_upsert)
 
     headers = {**headers_base, "action": "upsert", "doc_rev": "3-abc"}
-    await process_message(DummyMessage(body=b"data", headers=headers), aiohttp_session_stub)
+    await process_message(DummyMessage(headers), aiohttp_session_stub)
 
     assert captured["doc_rev"] == "3-abc"
 
@@ -266,7 +266,7 @@ async def test_upsert_same_md5_skips(monkeypatch, headers_base, aiohttp_session_
     monkeypatch.setattr(rag_client, "rag_upsert", fake_upsert)
 
     headers = {**headers_base, "action": "upsert", "md5sum": "SAME"}
-    msg = DummyMessage(body=b"ignored", headers=headers)
+    msg = DummyMessage(headers)
 
     await process_message(msg, aiohttp_session_stub)
     assert called["upsert"] is False
@@ -283,7 +283,7 @@ async def test_delete_429_raises_transient_error(monkeypatch, headers_base, aioh
 
     monkeypatch.setattr(rag_client, "rag_delete", fake_delete)
     headers = {**headers_base, "action": "delete"}
-    msg = DummyMessage(body=b"", headers=headers)
+    msg = DummyMessage(headers)
     with pytest.raises(TransientError):
         await process_message(msg, aiohttp_session_stub)
 
@@ -296,7 +296,7 @@ async def test_upsert_get_429_raises_transient_error(monkeypatch, headers_base, 
 
     monkeypatch.setattr(rag_client, "rag_get_file", fake_get)
     headers = {**headers_base, "action": "upsert", "md5sum": "aaa"}
-    msg = DummyMessage(body=b"data", headers=headers)
+    msg = DummyMessage(headers)
     with pytest.raises(TransientError):
         await process_message(msg, aiohttp_session_stub)
 
@@ -312,7 +312,7 @@ async def test_timeout_raises_transient_error(monkeypatch, headers_base, aiohttp
 
     monkeypatch.setattr(rag_client, "rag_delete", fake_delete)
     headers = {**headers_base, "action": "delete"}
-    msg = DummyMessage(body=b"", headers=headers)
+    msg = DummyMessage(headers)
     with pytest.raises(TransientError, match="[Tt]imeout"):
         await process_message(msg, aiohttp_session_stub)
 
@@ -324,7 +324,7 @@ async def test_timeout_raises_transient_error(monkeypatch, headers_base, aiohttp
 async def test_unknown_action_raises_fatal_error(monkeypatch, headers_base, aiohttp_session_stub):
     """Unknown action must raise FatalError, not generic Exception."""
     headers = {**headers_base, "action": "invalid_action"}
-    msg = DummyMessage(body=b"", headers=headers)
+    msg = DummyMessage(headers)
     with pytest.raises(FatalError, match="Unknown action"):
         await process_message(msg, aiohttp_session_stub)
 
@@ -334,13 +334,13 @@ async def test_unknown_action_raises_fatal_error(monkeypatch, headers_base, aioh
 # ------------------------
 def test_get_retry_count_no_xdeath():
     """First delivery -- no x-death header -- retry count is 0."""
-    msg = DummyMessage(body=b"", headers={})
+    msg = DummyMessage()
     assert get_retry_count(msg) == 0
 
 
 def test_get_retry_count_with_xdeath_entries():
     """x-death with 2 expired entries means retry count is 2."""
-    msg = DummyMessage(body=b"", headers={
+    msg = DummyMessage(headers={
         "x-death": [
             {"queue": "rag.index.retry.30s.q", "reason": "expired"},
             {"queue": "rag.index.retry.5m.q", "reason": "expired"},
@@ -351,7 +351,7 @@ def test_get_retry_count_with_xdeath_entries():
 
 def test_get_retry_count_ignores_non_expired():
     """Only reason=expired entries count toward retry count."""
-    msg = DummyMessage(body=b"", headers={
+    msg = DummyMessage(headers={
         "x-death": [
             {"queue": "rag.index.retry.30s.q", "reason": "expired"},
             {"queue": "rag.index.q", "reason": "rejected"},
@@ -375,7 +375,7 @@ async def test_missing_file_id_raises_fatal_error(
     """
     headers = {k: v for k, v in headers_base.items() if k != "file_id"}
     headers["action"] = "delete"
-    msg = DummyMessage(body=b"", headers=headers)
+    msg = DummyMessage(headers)
     with pytest.raises(FatalError, match="[Uu]nexpected|[Vv]alidation"):
         await process_message(msg, aiohttp_session_stub)
 
@@ -402,7 +402,7 @@ async def test_upsert_forwards_app_metadata_to_rag_upsert(
     monkeypatch.setattr(rag_client, "rag_upsert", fake_upsert)
 
     headers = {**headers_base, "action": "upsert", "app_metadata": {"custom": "value"}}
-    msg = DummyMessage(body=b"", headers=headers)
+    msg = DummyMessage(headers)
     await process_message(msg, aiohttp_session_stub)
 
     assert captured["msg"] is not None
@@ -421,7 +421,7 @@ async def test_server_disconnected_error_raises_transient(
 
     monkeypatch.setattr(rag_client, "rag_delete", fake_delete)
     headers = {**headers_base, "action": "delete"}
-    msg = DummyMessage(body=b"", headers=headers)
+    msg = DummyMessage(headers)
     with pytest.raises(TransientError, match="Network error"):
         await process_message(msg, aiohttp_session_stub)
 
@@ -436,7 +436,7 @@ async def test_server_disconnected_on_get_raises_transient(
 
     monkeypatch.setattr(rag_client, "rag_get_file", fake_get)
     headers = {**headers_base, "action": "upsert"}
-    msg = DummyMessage(body=b"data", headers=headers)
+    msg = DummyMessage(headers)
     with pytest.raises(TransientError, match="Network error"):
         await process_message(msg, aiohttp_session_stub)
 
@@ -451,7 +451,7 @@ async def test_unexpected_exception_raises_fatal(
 
     monkeypatch.setattr(rag_client, "rag_delete", fake_delete)
     headers = {**headers_base, "action": "delete"}
-    msg = DummyMessage(body=b"", headers=headers)
+    msg = DummyMessage(headers)
     with pytest.raises(FatalError, match="Unexpected error"):
         await process_message(msg, aiohttp_session_stub)
 
@@ -475,7 +475,7 @@ async def test_upsert_post_409_conflict_does_not_raise(
     monkeypatch.setattr(rag_client, "rag_upsert", fake_upsert)
 
     headers = {**headers_base, "action": "upsert"}
-    msg = DummyMessage(body=b"data", headers=headers)
+    msg = DummyMessage(headers)
     await process_message(msg, aiohttp_session_stub)  # must not raise
 
 
@@ -501,7 +501,7 @@ async def test_upsert_get_200_no_md5sum_reindexes(
     monkeypatch.setattr(rag_client, "rag_upsert", fake_upsert)
 
     headers = {**headers_base, "action": "upsert"}
-    msg = DummyMessage(body=b"data", headers=headers)
+    msg = DummyMessage(headers)
     await process_message(msg, aiohttp_session_stub)
 
     assert calls["upsert"] is not None
@@ -530,28 +530,10 @@ async def _capture_upsert_msg(monkeypatch, dummy_msg, session_stub):
 
 
 @pytest.mark.asyncio
-async def test_callback_token_extracted_from_headers_format(
+async def test_callback_token_extracted_from_body(
     monkeypatch, headers_base, aiohttp_session_stub
 ):
-    """'headers' wire format: callback_token reaches the IndexMessage."""
-    headers = {
-        **headers_base,
-        "action": "upsert",
-        "callback_url": "https://cozy.example/ai/index/status",
-        "callback_token": "tok-headers",
-    }
-    msg = await _capture_upsert_msg(
-        monkeypatch, DummyMessage(body=b"", headers=headers), aiohttp_session_stub
-    )
-    assert msg.callback_token == "tok-headers"
-    assert msg.callback_url == "https://cozy.example/ai/index/status"
-
-
-@pytest.mark.asyncio
-async def test_callback_token_extracted_from_cozy_json_format(
-    monkeypatch, headers_base, aiohttp_session_stub
-):
-    """'cozy-json' wire format: business fields in the body, AMQP headers empty."""
+    """callback_token and callback_url reach the IndexMessage."""
     payload = {
         **headers_base,
         "action": "upsert",
@@ -560,22 +542,22 @@ async def test_callback_token_extracted_from_cozy_json_format(
     }
     msg = await _capture_upsert_msg(
         monkeypatch,
-        DummyMessage(body=json.dumps(payload).encode(), headers={}),
+        DummyMessage(payload),
         aiohttp_session_stub,
     )
     assert msg.callback_token == "tok-cozy-json"
 
 
 @pytest.mark.asyncio
-async def test_callback_token_extracted_from_cozy_json_after_retry_cycle(
+async def test_fields_read_from_body_after_retry_cycle(
     monkeypatch, headers_base, aiohttp_session_stub
 ):
-    """Broker-added x-death headers must not shadow the cozy-json body."""
+    """Broker-added x-death headers do not get in the way of the body."""
     payload = {**headers_base, "action": "upsert", "callback_token": "tok-after-retry"}
     amqp_headers = {"x-death": [{"reason": "expired", "count": 1}]}
     msg = await _capture_upsert_msg(
         monkeypatch,
-        DummyMessage(body=json.dumps(payload).encode(), headers=amqp_headers),
+        DummyMessage(payload, headers=amqp_headers),
         aiohttp_session_stub,
     )
     assert msg.callback_token == "tok-after-retry"
@@ -588,7 +570,7 @@ async def test_callback_token_absent_is_none(
     """Optional field: a message without callback_token still processes."""
     headers = {**headers_base, "action": "upsert", "callback_url": "https://cozy.example/cb"}
     msg = await _capture_upsert_msg(
-        monkeypatch, DummyMessage(body=b"", headers=headers), aiohttp_session_stub
+        monkeypatch, DummyMessage(headers), aiohttp_session_stub
     )
     assert msg.callback_token is None
     assert msg.callback_url == "https://cozy.example/cb"

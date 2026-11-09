@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 
@@ -41,11 +43,11 @@ class FakeSession:
 
 
 class DummyMessage:
-    """Suffisant pour process_message(): expose .body et .headers."""
+    """Enough for process_message(): the fields JSON-encoded in .body, AMQP .headers."""
 
-    def __init__(self, body: bytes, headers: dict):
-        self.body = body
-        self.headers = headers
+    def __init__(self, fields: dict | None = None, headers: dict | None = None):
+        self.body = json.dumps(fields).encode() if fields is not None else b""
+        self.headers = headers or {}
 
 
 @pytest.fixture
