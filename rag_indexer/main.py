@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from structlog.contextvars import clear_contextvars, bind_contextvars
 
 from rag_indexer.config import RABBITMQ_URL, HTTP_TIMEOUT, CONCURRENCY, HEALTH_PORT
-from rag_indexer.errors import TransientError, FatalError
+from rag_indexer.errors import TransientError, FatalError, UnsupportedError
 from rag_indexer.logging import setup_logging
 from rag_indexer.metrics import MESSAGES_TOTAL, PROCESSING_DURATION
 from rag_indexer.processing import (
@@ -24,6 +24,7 @@ from rag_indexer.transport import (
     declare_topology,
     publish_to_retry,
     publish_to_dlq,
+    send_status_callback,
     start_health_server,
     shutdown_event,
     request_shutdown,
@@ -92,6 +93,15 @@ async def main():
                             PROCESSING_DURATION.labels(action=action).observe(duration)
                             log.error("message_invalid_payload", error=str(ve))
                             await publish_to_dlq(channel, message, session, metadata)
+
+                        except UnsupportedError as ue:
+                            # A format openRAG will never index: ack, like cozy-stack's
+                            # own indexer, and record it as such.
+                            duration = time.monotonic() - start_time
+                            MESSAGES_TOTAL.labels(action=action, status="unsupported", partition=partition).inc()
+                            PROCESSING_DURATION.labels(action=action).observe(duration)
+                            log.info("message_unsupported", error=str(ue))
+                            send_status_callback(session, metadata, "notsupported")
 
                         except TransientError as te:
                             duration = time.monotonic() - start_time

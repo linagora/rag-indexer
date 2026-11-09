@@ -182,6 +182,7 @@ async def _publish(
     content_type: str = "text/markdown",
     action: str = "upsert",
     file_url: str | None = None,
+    callback_url: str | None = None,
 ) -> None:
     """Publish a message via the producer — same code path as production."""
     fields = producer_mod.build_fields(
@@ -194,6 +195,8 @@ async def _publish(
         name=name,
         md5sum="d41d8cd98f00b204e9800998ecf8427e",
         file_url=file_url or f"{rag_base_url}/testfile",
+        callback_url=callback_url,
+        doc_rev="1-abc",
     )
     await producer_mod.publish_message(
         routing_key=_PUBLISH_ROUTING_KEY,
@@ -302,3 +305,24 @@ async def test_retry_exhaustion_to_dlq(rabbitmq_url, monkeypatch, rag_stub, rmq_
     assert json.loads(dlq_msg.body)["file_id"] == "e2e-exhausted-001"
     assert len([c for c in call_log if c["method"] == "GET"]) == len(TEST_RETRY_QUEUES) + 1
     await dlq_msg.ack()
+
+
+async def test_unsupported_format_is_acked_and_reported(rabbitmq_url, monkeypatch, rag_stub, rmq_channel, main_consumer):
+    """POST 415 → message acked (no DLQ) and a "notsupported" status callback."""
+    _, _, dlq = rmq_channel
+    server, call_log, response_rules = rag_stub
+    rag_base_url = str(server.make_url("")).rstrip("/")
+
+    response_rules[("GET", "/partition/test-partition/file/e2e-unsupported-001")] = (404, {})
+    response_rules[("POST", "/indexer/partition/test-partition/file/e2e-unsupported-001")] = (415, "Unsupported file format")
+
+    await _publish(
+        file_id="e2e-unsupported-001", name="archive.xyz",
+        rag_base_url=rag_base_url, callback_url=f"{rag_base_url}/cb",
+    )
+    await _poll(lambda: any(c["path"] == "/cb" for c in call_log))
+
+    callback = json.loads(next(c for c in call_log if c["path"] == "/cb")["body"])
+    assert callback["status"] == "notsupported"
+    assert callback["metadata"]["doc_rev"] == "1-abc"
+    assert await dlq.get(fail=False) is None

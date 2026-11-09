@@ -9,7 +9,7 @@ from aiohttp import FormData
 
 from rag_indexer.config import HTTP_TIMEOUT
 from rag_indexer.models import IndexMessage, RagConn
-from rag_indexer.errors import TransientError, FatalError
+from rag_indexer.errors import TransientError, FatalError, UnsupportedError
 
 log = structlog.get_logger()
 
@@ -194,6 +194,8 @@ async def rag_upsert(
             # The id is already known (a concurrent upload) or still being indexed:
             # the retry reads it again and sends a PUT if its content differs.
             raise TransientError(f"RAG {method} 409: {resp_text}")
+        if resp.status == 415:
+            raise UnsupportedError(f"RAG {method} 415: {resp_text}")
         if resp.status >= 400:
             raise FatalError(f"RAG {method} {resp.status}: {resp_text}")
         return

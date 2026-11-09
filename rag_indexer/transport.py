@@ -69,13 +69,13 @@ def _file_metadata(metadata: dict) -> dict:
     )
 
 
-# Fire-and-forget failure-callback POSTs, tracked so asyncio doesn't garbage-collect
-# them mid-flight; publish_to_dlq returns as soon as the DLQ publish is confirmed
-# instead of holding the caller's concurrency slot for the callback's HTTP round trip.
+# Fire-and-forget status-callback POSTs, tracked so asyncio doesn't garbage-collect
+# them mid-flight; callers return without waiting for the HTTP round trip, which
+# would hold their concurrency slot.
 _callback_tasks: set[asyncio.Task] = set()
 
 
-async def _post_dlq_callback(
+async def _post_status_callback(
     session: aiohttp.ClientSession,
     callback_url: str,
     payload: dict,
@@ -86,9 +86,9 @@ async def _post_dlq_callback(
             callback_url, json=payload, headers=headers, timeout=CALLBACK_TIMEOUT
         ) as resp:
             resp.raise_for_status()
-        log.info("dlq_callback_sent", callback_url=callback_url)
+        log.info("status_callback_sent", callback_url=callback_url)
     except Exception as e:
-        log.warning("dlq_callback_failed", callback_url=callback_url, error=str(e))
+        log.warning("status_callback_failed", callback_url=callback_url, error=str(e))
 
 
 async def publish_to_retry(
@@ -134,25 +134,31 @@ async def publish_to_dlq(
         routing_key=DLQ_NAME,
     )
 
-    # Best-effort failure callback to cozy-stack -- must never block or fail the DLQ publish.
     if metadata is None:
         metadata = extract_metadata(original_msg)
+    # publish_to_dlq is only the terminal failure path, so the status is "error".
+    send_status_callback(session, metadata, "error")
+
+
+def send_status_callback(session: aiohttp.ClientSession, metadata: dict, status: str) -> None:
+    """Best-effort POST of an indexing status to the message's callback_url.
+
+    Detached: it never blocks nor fails the caller. Statuses are the ones cozy-stack's
+    SetIndexStatus knows: "success", "error", "notsupported".
+    """
     callback_url = metadata.get("callback_url")
     if not callback_url:
-        log.debug("dlq_callback_skipped", reason="no_callback_url")
+        log.debug("status_callback_skipped", reason="no_callback_url")
         return
     if not metadata.get("doc_rev"):
         # cozy-stack answers 400 to a status without the revision it describes.
-        log.warning("dlq_callback_skipped", reason="no_doc_rev")
+        log.warning("status_callback_skipped", reason="no_doc_rev")
         return
 
-    # publish_to_dlq is only the terminal failure path (retries exhausted), so the
-    # status is always "error" -- the canonical vocabulary expected by cozy-stack's
-    # SetIndexStatus.
     payload = {
         "partition": metadata.get("partition"),
         "file_id": metadata.get("file_id"),
-        "status": "error",
+        "status": status,
         # Milliseconds and a "Z" suffix: the spelling cozy-stack documents and the one
         # OpenRAG emits, so both callback producers write the same timestamp.
         "timestamp": datetime.now(timezone.utc)
@@ -167,7 +173,7 @@ async def publish_to_dlq(
         {"Authorization": f"Bearer {callback_token}"} if callback_token else None
     )
     task = asyncio.create_task(
-        _post_dlq_callback(session, callback_url, payload, callback_headers)
+        _post_status_callback(session, callback_url, payload, callback_headers)
     )
     _callback_tasks.add(task)
     task.add_done_callback(_callback_tasks.discard)
