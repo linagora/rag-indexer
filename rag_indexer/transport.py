@@ -87,6 +87,9 @@ async def _post_status_callback(
         ) as resp:
             resp.raise_for_status()
         log.info("status_callback_sent", callback_url=callback_url)
+    except aiohttp.ClientResponseError as e:
+        # str(e) would carry the full callback_url past the log redaction.
+        log.warning("status_callback_failed", callback_url=callback_url, status=e.status)
     except Exception as e:
         log.warning("status_callback_failed", callback_url=callback_url, error=str(e))
 

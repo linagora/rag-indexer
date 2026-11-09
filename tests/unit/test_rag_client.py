@@ -1,6 +1,7 @@
 import io
 import json
 
+import aiohttp
 import pytest
 
 from rag_indexer.models import IndexMessage, RagConn, ContentSpec
@@ -11,7 +12,7 @@ from rag_indexer.rag_client import (
     metadata_dict,
     rag_upsert,
 )
-from rag_indexer.errors import TransientError, UnsupportedError
+from rag_indexer.errors import FatalError, TransientError, UnsupportedError
 from tests.conftest import FakeContextResp, FakeSession
 
 
@@ -44,6 +45,28 @@ async def test_get_producer_file_reads_inside_context():
     dest = io.BytesIO()
     await get_producer_file(fake_session, msg, dest)
     assert dest.getvalue() == expected_bytes
+
+
+@pytest.mark.asyncio
+async def test_get_producer_file_invalid_url_is_fatal_without_the_secret():
+    class _InvalidUrlSession:
+        def get(self, url, **kwargs):
+            raise aiohttp.InvalidURL(url)
+
+    with pytest.raises(FatalError) as exc:
+        await get_producer_file(_InvalidUrlSession(), _upsert_msg(), io.BytesIO())
+    assert "sekret" not in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_get_producer_file_disk_full_is_transient():
+    class _FullDisk(io.BytesIO):
+        def write(self, data):
+            raise OSError(28, "No space left on device")
+
+    session = FakeSession(FakeContextResp(status=200, body=b"x"))
+    with pytest.raises(TransientError):
+        await get_producer_file(session, _upsert_msg(), _FullDisk())
 
 
 # ------------------------
