@@ -23,16 +23,9 @@ URL_KEYS = frozenset({"file_url", "callback_url"})
 
 
 def _redact_url(value):
-    """Keep scheme://host; redact the path/query which may carry secrets.
-
-    For cozy-stack download URLs, preserve the prefix up to /downloads/.
-    """
+    """Keep scheme://host; redact the path/query which may carry secrets."""
     if not isinstance(value, str):
         return value
-    marker = "/downloads/"
-    idx = value.find(marker)
-    if idx != -1:
-        return value[: idx + len(marker)] + "<redacted>"
     parsed = urlparse(value)
     if parsed.scheme and parsed.netloc:
         return f"{parsed.scheme}://{parsed.netloc}/<redacted>"

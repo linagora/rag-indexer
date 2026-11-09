@@ -91,23 +91,7 @@ async def get_producer_file(session: aiohttp.ClientSession, msg: IndexMessage, d
 _DUPLICATE_CONTENT_CODE = "DOCUMENT_CONTENT_EXISTS"
 
 
-# cozy-stack's callback handler reads only metadata.doc_rev (web/ai/index_status.go).
-# OpenRAG itself has no fixed field list: indexing_callback.py echoes every metadata
-# key except its own server-computed ones (UPLOAD_METADATA_SERVER_KEYS in
-# core/utils/conts.py), so its real success callback also carries md5sum and any
-# app_metadata. This keeps our own DLQ failure callback to what cozy actually reads,
-# plus datetime/doctype for readability.
-_ECHOED_METADATA_FIELDS = ("doc_rev", "datetime", "doctype")
-
-
-def metadata_dict(
-    *,
-    doc_rev: str | None,
-    md5sum: str | None,
-    datetime: str | None,
-    doctype: str | None,
-    app_metadata: dict | None,
-) -> dict[str, Any]:
+def build_metadata(msg: IndexMessage) -> dict[str, Any]:
     """Metadata stored on the OpenRAG document.
 
     doc_rev is never filled in from another field: cozy-stack reads it as a CouchDB
@@ -115,30 +99,15 @@ def metadata_dict(
     look outdated and be dropped without a trace.
     """
     meta = {
-        "md5sum": md5sum or "",
-        "datetime": datetime or "",
-        "doctype": doctype or "",
+        "md5sum": msg.md5sum or "",
+        "datetime": msg.datetime or "",
+        "doctype": msg.doctype or "",
     }
-    if isinstance(app_metadata, dict):
-        meta |= app_metadata
+    if isinstance(msg.app_metadata, dict):
+        meta |= msg.app_metadata
     # Set last: the callbacks are ordered on this, application metadata must not move it.
-    meta["doc_rev"] = doc_rev or ""
+    meta["doc_rev"] = msg.doc_rev or ""
     return meta
-
-
-def build_metadata(msg: IndexMessage) -> dict[str, Any]:
-    return metadata_dict(
-        doc_rev=msg.doc_rev,
-        md5sum=msg.md5sum,
-        datetime=msg.datetime,
-        doctype=msg.doctype,
-        app_metadata=msg.app_metadata,
-    )
-
-
-def callback_metadata(meta: dict[str, Any]) -> dict[str, Any]:
-    """Narrow document metadata down to what our own DLQ failure callback carries."""
-    return {field: meta.get(field) for field in _ECHOED_METADATA_FIELDS}
 
 
 async def rag_upsert(
@@ -174,15 +143,11 @@ async def _send_upsert(
     if msg.callback_url:
         form.add_field("callback_url", msg.callback_url)
         log.debug("upsert_callback_url_forwarded", callback_url=msg.callback_url)
-    else:
-        log.debug("upsert_callback_url_absent")
 
     # Token for OpenRAG to sign the callback. Presence is logged, never the value.
     if msg.callback_token:
         form.add_field("callback_token", msg.callback_token)
         log.debug("upsert_callback_token_forwarded")
-    else:
-        log.debug("upsert_callback_token_absent")
 
     url_base = f"{rag.base_url}/indexer/partition/{msg.partition}/file/{msg.file_id}"
 

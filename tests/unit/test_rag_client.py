@@ -8,8 +8,6 @@ from rag_indexer.models import IndexMessage, RagConn, ContentSpec
 from rag_indexer.rag_client import (
     get_producer_file,
     build_metadata,
-    callback_metadata,
-    metadata_dict,
     rag_upsert,
 )
 from rag_indexer.errors import FatalError, TransientError, UnsupportedError
@@ -191,35 +189,6 @@ def test_build_metadata_none_values_in_app_metadata():
     meta = build_metadata(msg)
     assert meta["extra"] is None
     assert meta["doc_rev"] == "3-abc"
-
-
-def test_build_metadata_no_doc_rev_no_md5sum():
-    """Neither field set -- both fall back to the empty string, never to each other."""
-    meta = metadata_dict(doc_rev=None, md5sum=None, datetime=None, doctype=None, app_metadata=None)
-    assert meta["doc_rev"] == ""
-    assert meta["md5sum"] == ""
-
-
-def test_callback_metadata_narrows_to_what_cozy_reads():
-    """callback_metadata() is our own narrowing for the DLQ failure callback, down
-    to what cozy's handler reads (doc_rev) plus datetime/doctype. It is not what
-    OpenRAG does: OpenRAG's real success callback echoes every metadata key except
-    its own server-computed ones, so it also carries md5sum and app_metadata.
-    """
-    upsert_meta = build_metadata(
-        _upsert_msg(
-            doc_rev="3-abc",
-            md5sum="d41d8cd98f00b204e9800998ecf8427e",
-            datetime="2026-01-15T12:00:00Z",
-            doctype="io.cozy.files",
-            app_metadata={"custom": "value"},
-        )
-    )
-    assert callback_metadata(upsert_meta) == {
-        "doc_rev": "3-abc",
-        "datetime": "2026-01-15T12:00:00Z",
-        "doctype": "io.cozy.files",
-    }
 
 
 # ------------------------
