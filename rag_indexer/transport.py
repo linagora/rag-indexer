@@ -179,6 +179,15 @@ def send_status_callback(session: aiohttp.ClientSession, metadata: dict, status:
     task.add_done_callback(_callback_tasks.discard)
 
 
+async def drain_status_callbacks() -> None:
+    """Wait for the status callbacks still in flight, so that a shutdown keeps them.
+
+    Bounded: each one gives up after CALLBACK_TIMEOUT.
+    """
+    if _callback_tasks:
+        await asyncio.wait(_callback_tasks)
+
+
 async def declare_topology(channel: aio_pika.Channel) -> aio_pika.Queue:
     """Declare exchanges, queues, and bindings. Returns the main queue."""
     # Main exchange (topic, durable)
