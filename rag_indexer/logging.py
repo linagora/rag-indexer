@@ -10,6 +10,7 @@ SENSITIVE_KEYS = frozenset({
     "rag_api_key",
     "api_key",
     "callback_token",
+    "file_token",
     "bearer",
     "authorization",
     "password",
