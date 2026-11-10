@@ -55,7 +55,7 @@ def build_fields(
     callback_url: str | None = None,
 ) -> dict:
     f = {
-        "action": action,  # "upsert" | "delete"
+        "action": action,  # "upsert" | "delete" | "sync"
         "partition": partition,
         "file_id": file_id,
         "rag_base_url": rag_base_url,
@@ -180,6 +180,22 @@ async def cmd_delete(args: argparse.Namespace) -> None:
     print(f"Published delete for {args.file_id} on {args.partition}")
 
 
+async def cmd_sync(args: argparse.Namespace) -> None:
+    fields = build_fields(
+        action="sync",
+        partition=args.partition,
+        file_id=args.file_id,
+        rag_base_url=args.rag_base_url or RAG_BASE_URL,
+        rag_api_key=args.rag_api_key or RAG_API_KEY,
+        doc_rev=args.doc_rev,
+        callback_url=args.callback_url,
+    )
+    fields["state_url"] = args.state_url
+    fields["file_token"] = args.file_token
+    await publish_message(routing_key=args.routing_key, fields=fields)
+    print(f"Published sync for {args.file_id} on {args.partition}")
+
+
 def make_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description="RAG indexer producer (compatible with the aio-pika consumer)."
@@ -224,6 +240,12 @@ def make_parser() -> argparse.ArgumentParser:
     # delete
     spd = sub.add_parser("delete", help="Delete an indexed file")
     spd.set_defaults(func=cmd_delete)
+
+    # sync
+    sps = sub.add_parser("sync", help="Let the consumer read the file state on cozy-stack")
+    sps.add_argument("--state-url", required=True, help="cozy-stack /ai/index/files/<id> URL")
+    sps.add_argument("--file-token", required=True, help="Bearer of the state URL")
+    sps.set_defaults(func=cmd_sync)
 
     return p
 
