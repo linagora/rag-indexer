@@ -46,6 +46,35 @@ def next_retry_queue(retry_count: int) -> str | None:
     return None
 
 
+async def resolve_sync(session: aiohttp.ClientSession, msg: IndexMessage) -> IndexMessage:
+    """Turn a sync into the delete or the upsert the file's current state calls for.
+
+    The state is read now, not when the message was published: a message retried
+    after a newer one cannot undo it.
+    """
+    state = await rag_client.get_file_state(session, msg)
+    if state is None:
+        log.debug("sync_file_gone", detail="removing it from openRAG")
+        return msg.model_copy(update={"action": "delete"})
+    meta = dict(state.metadata)
+    return msg.model_copy(update={
+        "action": "upsert",
+        "name": state.name,
+        "md5sum": state.md5sum,
+        "datetime": meta.pop("datetime", None),
+        "doctype": meta.pop("doctype", None),
+        "doc_rev": meta.pop("doc_rev", None) or msg.doc_rev,
+        "app_metadata": meta,
+        "workspace_ids": state.workspace_ids,
+        "content": ContentSpec(file_url=f"{msg.state_url}/content"),
+    })
+
+
+async def sync_membership(session: aiohttp.ClientSession, msg: IndexMessage) -> None:
+    if msg.workspace_ids is not None:
+        await rag_client.sync_membership(session, msg.rag, msg.partition, msg.file_id, msg.workspace_ids)
+
+
 async def process_message(
     message: aio_pika.IncomingMessage,
     session: aiohttp.ClientSession,
@@ -72,6 +101,8 @@ async def process_message(
             app_metadata=fields.get("app_metadata"),
             callback_url=fields.get("callback_url"),
             callback_token=fields.get("callback_token"),
+            state_url=fields.get("state_url"),
+            file_token=fields.get("file_token"),
             rag=RagConn(
                 base_url=fields.get("rag_base_url", ""),
                 api_key=fields.get("rag_api_key", ""),
@@ -81,6 +112,8 @@ async def process_message(
             ),
         )
         log.debug("message_processing")
+        if msg.action == "sync":
+            msg = await resolve_sync(session, msg)
         if msg.action == "delete":
             resp = await rag_client.rag_delete(session, msg.rag, msg.partition, msg.file_id)
             if 200 <= resp.status < 300 or resp.status == 404:
@@ -113,9 +146,14 @@ async def process_message(
                 raise FatalError(f"RAG GET {resp.status}: {resp.text}")
 
             if not need_index:
+                await sync_membership(session, msg)
                 return
 
-            return await rag_client.rag_upsert(session, msg, is_new)
+            await rag_client.rag_upsert(session, msg, is_new)
+            if not is_new:
+                # A PUT re-embeds the content: make sure the memberships survived it.
+                await sync_membership(session, msg)
+            return
         else:
             raise FatalError(f"Unknown action: {msg.action}")
 
