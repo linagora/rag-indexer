@@ -16,8 +16,19 @@ class ContentSpec(BaseModel):
     file_url: str | None = None
 
 
+class FileState(BaseModel):
+    """What cozy-stack answers on a sync message's state_url: what openRAG must hold."""
+
+    name: str
+    md5sum: str
+    workspace_ids: list[str] = []
+    metadata: dict = {}
+
+
 class IndexMessage(BaseModel):
-    action: str  # "upsert" | "delete"
+    # "upsert" | "delete", or "sync": the stack only names the file, and the
+    # consumer reads on state_url which of the two the file needs when it runs.
+    action: str
     partition: str
     file_id: str
     doctype: str | None = None
@@ -31,6 +42,10 @@ class IndexMessage(BaseModel):
     callback_token: str | None = None  # secret: never logged, never in a URL
     rag: RagConn
     content: ContentSpec | None = None
+    state_url: str | None = None
+    file_token: str | None = None  # secret: bearer of state_url and of its content
+    # Workspaces of the file on openRAG; None leaves its memberships alone.
+    workspace_ids: list[str] | None = None
 
     @model_validator(mode="after")
     def _check_required_fields(self):
@@ -42,6 +57,8 @@ class IndexMessage(BaseModel):
                 missing.append("file_url")
             if missing:
                 raise ValueError(f"upsert without {', '.join(missing)}")
+        if self.action == "sync" and not (self.state_url and self.file_token):
+            raise ValueError("sync without state_url or file_token")
         if self.callback_url and not self.doc_rev:
             # cozy-stack orders the status callbacks on it and refuses one without it.
             raise ValueError("callback_url without doc_rev")

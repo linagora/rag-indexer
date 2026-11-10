@@ -9,7 +9,7 @@ import structlog
 from aiohttp import FormData
 
 from rag_indexer.config import HTTP_TIMEOUT
-from rag_indexer.models import IndexMessage, RagConn
+from rag_indexer.models import FileState, IndexMessage, RagConn
 from rag_indexer.errors import TransientError, FatalError, UnsupportedError
 
 log = structlog.get_logger()
@@ -52,18 +52,74 @@ async def rag_delete(
         return RagResponse(status=resp.status, text=text)
 
 
+def _check(what: str, status: int, text: str, tolerated: tuple[int, ...] = ()) -> None:
+    """2xx and tolerated statuses pass, 429 and 5xx are transient, other 4xx fatal."""
+    if status < 300 or status in tolerated:
+        return
+    if status == 429 or status >= 500:
+        raise TransientError(f"{what} {status}: {text}")
+    raise FatalError(f"{what} {status}: {text}")
+
+
+async def get_file_state(session: aiohttp.ClientSession, msg: IndexMessage) -> FileState | None:
+    """The state cozy-stack gives for a sync message's file; None when the file must
+    not be on openRAG (deleted, trashed, outside every knowledge base folder)."""
+    log.debug("stack_api_call", method="GET", endpoint="file_state")
+    async with session.get(
+        msg.state_url, headers={"Authorization": f"Bearer {msg.file_token}"}, timeout=HTTP_TIMEOUT
+    ) as resp:
+        text = await resp.text()
+    if resp.status == 404:
+        return None
+    # A 401 is a token that expired in the DLQ: the next change of the file
+    # publishes a new message.
+    _check("stack GET file state", resp.status, text)
+    return FileState.model_validate_json(text)
+
+
+async def sync_membership(
+    session: aiohttp.ClientSession, rag: RagConn, partition: str, file_id: str, desired: list[str]
+) -> None:
+    """Make the workspaces of the file on openRAG equal to desired."""
+    headers = {"Authorization": f"Bearer {rag.api_key}"}
+    base = f"{rag.base_url}/partition/{partition}"
+    async with session.get(f"{base}/files/{file_id}/workspaces", headers=headers, timeout=HTTP_TIMEOUT) as resp:
+        text = await resp.text()
+    if resp.status == 404:
+        return  # not indexed yet (asynchronous indexing): the upload carried the workspaces
+    _check("RAG GET file workspaces", resp.status, text)
+    current = json.loads(text).get("workspace_ids") or []
+    for ws in desired:
+        if ws not in current:
+            async with session.post(
+                f"{base}/workspaces/{ws}/files", json={"file_ids": [file_id]}, headers=headers, timeout=HTTP_TIMEOUT
+            ) as resp:
+                _check("RAG POST workspace file", resp.status, await resp.text())
+    for ws in current:
+        if ws not in desired:
+            async with session.delete(
+                f"{base}/workspaces/{ws}/files/{file_id}", headers=headers, timeout=HTTP_TIMEOUT
+            ) as resp:
+                _check("RAG DELETE workspace file", resp.status, await resp.text(), tolerated=(404,))
+
+
 _DOWNLOAD_CHUNK_SIZE = 64 * 1024
 
 
 async def get_producer_file(session: aiohttp.ClientSession, msg: IndexMessage, dest) -> None:
     """Write the content at msg's file_url into the binary file object dest.
 
-    The file_url carries its own authentication via the secret in its path
-    (cozy-stack /files/downloads/<secret>/<filename>); no Authorization header.
+    The file_url of an upsert carries its own authentication via the secret in its
+    path (cozy-stack /files/downloads/<secret>/<filename>). The one of a sync is
+    authenticated by its file_token.
     """
     log.debug("file_download", source="file_url")
+    headers = {"Authorization": f"Bearer {msg.file_token}"} if msg.file_token else None
     try:
-        async with session.get(msg.content.file_url, timeout=HTTP_TIMEOUT) as resp:
+        async with session.get(msg.content.file_url, headers=headers, timeout=HTTP_TIMEOUT) as resp:
+            if resp.status == 404 and msg.file_token:
+                # Gone since its state was read: the retry reads it again, and deletes it.
+                raise TransientError("file_url 404 after the state was read")
             if resp.status == 429 or resp.status >= 500:
                 raise TransientError(f"Failed to fetch file_url ({resp.status})")
             if resp.status >= 400:
@@ -149,6 +205,9 @@ async def _send_upsert(
         form.add_field("callback_token", msg.callback_token)
         log.debug("upsert_callback_token_forwarded")
 
+    if msg.workspace_ids:
+        form.add_field("workspace_ids", json.dumps(msg.workspace_ids))
+
     url_base = f"{rag.base_url}/indexer/partition/{msg.partition}/file/{msg.file_id}"
 
     method = "POST" if is_new else "PUT"
@@ -175,6 +234,9 @@ async def _send_upsert(
             # The id is already known (a concurrent upload) or still being indexed:
             # the retry reads it again and sends a PUT if its content differs.
             raise TransientError(f"RAG {method} 409: {resp_text}")
+        if resp.status == 404 and msg.workspace_ids:
+            # A workspace the stack has not created yet: it does on its next run.
+            raise TransientError(f"RAG {method} 404: {resp_text}")
         if resp.status == 415:
             raise UnsupportedError(f"RAG {method} 415: {resp_text}")
         if resp.status >= 400:

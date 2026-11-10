@@ -51,7 +51,7 @@ The body is a JSON object, the way cozy-stack publishes it (no custom AMQP heade
 
 | Field | Required | Description |
 |---|---|---|
-| `action` | yes | `upsert` or `delete` |
+| `action` | yes | `upsert`, `delete` or `sync` |
 | `partition`, `file_id` | yes | Where the file lives in openRAG |
 | `rag_base_url`, `rag_api_key` | yes | The openRAG server of the instance |
 | `name` | upsert | File name: openRAG picks its parser from the extension |
@@ -60,6 +60,14 @@ The body is a JSON object, the way cozy-stack publishes it (no custom AMQP heade
 | `doc_rev` | with `callback_url` | Revision of the file, echoed back on the status callback |
 | `callback_url`, `callback_token` | no | Where the indexing status is posted, and the bearer sent with it |
 | `content_type`, `doctype`, `datetime`, `app_metadata` | no | Stored with the file in openRAG |
+| `state_url`, `file_token` | sync | cozy-stack route giving the file state, and its bearer |
+
+A `sync` names the file and nothing else: the consumer reads on `state_url` what openRAG
+must hold, when it processes the message. A `404` there makes it a `delete`. Otherwise
+the state (`name`, `md5sum`, `workspace_ids`, `metadata`) makes it an `upsert` whose
+content is downloaded from `<state_url>/content` with the same bearer, and the file's
+workspace memberships on openRAG are set to `workspace_ids`. Reading the state late means
+a retried message cannot undo a newer one, a deleted file in particular.
 
 The status callback is the payload of cozy-stack's `POST /ai/index/status`.
 openRAG posts `success` or `error` once it has indexed the file; the indexer itself
