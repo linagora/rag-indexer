@@ -1,3 +1,4 @@
+import json
 import os
 
 import aiohttp
@@ -65,6 +66,27 @@ RETRY_INTERVALS = parse_retry_intervals()
 RETRY_QUEUES = build_retry_queues(RETRY_INTERVALS)
 MAX_RETRIES = len(RETRY_QUEUES)
 DLQ_NAME = os.getenv("DLQ_NAME", "rag.index.dlq")
+
+def parse_rag_api_keys() -> dict[str, str]:
+    """Parse RAG_API_KEYS, a JSON object of openRAG base URL -> API key.
+
+    It is also the list of the servers a message may name: reading the broker gives
+    no access to openRAG, and a message cannot send a key to an arbitrary URL.
+    """
+    raw = os.getenv("RAG_API_KEYS", "").strip()
+    if not raw:
+        return {}
+    keys = json.loads(raw)
+    # An empty object would silently fall back to the keys of the messages.
+    if not isinstance(keys, dict) or not keys or not all(
+        isinstance(url, str) and url and isinstance(key, str) and key for url, key in keys.items()
+    ):
+        raise ValueError("RAG_API_KEYS must be a JSON object of non-empty base URLs to non-empty API keys")
+    # The base URLs of the messages are compared without their trailing slash.
+    return {url.rstrip("/"): key for url, key in keys.items()}
+
+
+RAG_API_KEYS = parse_rag_api_keys()
 
 CONCURRENCY = int(os.getenv("CONCURRENCY", "1"))
 

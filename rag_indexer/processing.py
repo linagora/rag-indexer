@@ -6,6 +6,7 @@ import aiohttp
 import structlog
 
 from rag_indexer import rag_client
+from rag_indexer import config
 from rag_indexer.config import RETRY_QUEUES
 from rag_indexer.models import IndexMessage, RagConn, ContentSpec
 from rag_indexer.errors import TransientError, FatalError
@@ -44,6 +45,20 @@ def next_retry_queue(retry_count: int) -> str | None:
     if retry_count < len(RETRY_QUEUES):
         return RETRY_QUEUES[retry_count][0]
     return None
+
+
+def resolve_rag(fields: dict) -> RagConn:
+    """The openRAG server of the message, with the API key the indexer holds for it.
+
+    Raises FatalError for a server missing from RAG_API_KEYS: no retry makes it known.
+    """
+    base_url = (fields.get("rag_base_url") or "").rstrip("/")
+    if not config.RAG_API_KEYS:
+        return RagConn(base_url=base_url, api_key=fields.get("rag_api_key", ""))
+    key = config.RAG_API_KEYS.get(base_url)
+    if key is None:
+        raise FatalError(f"openRAG server {base_url!r} is not in RAG_API_KEYS")
+    return RagConn(base_url=base_url, api_key=key)
 
 
 async def resolve_sync(session: aiohttp.ClientSession, msg: IndexMessage) -> IndexMessage:
@@ -103,10 +118,7 @@ async def process_message(
             callback_token=fields.get("callback_token"),
             state_url=fields.get("state_url"),
             file_token=fields.get("file_token"),
-            rag=RagConn(
-                base_url=fields.get("rag_base_url", ""),
-                api_key=fields.get("rag_api_key", ""),
-            ),
+            rag=resolve_rag(fields),
             content=ContentSpec(
                 file_url=fields.get("file_url"),
             ),

@@ -37,6 +37,7 @@ All settings are via environment variables (see `env.example`):
 | Variable | Default | Description |
 |---|---|---|
 | `RABBITMQ_URL` | `amqp://guest:guest@localhost:5672/` | AMQP connection string |
+| `RAG_API_KEYS` | — | JSON object mapping the base URL of each openRAG server the consumer may call to its API key, e.g. `{"https://openrag.example": "key"}`. A message for another server goes to the DLQ. Unset: the key is read from the message (`rag_api_key`) |
 | `RAG_BASE_URL` | — | RAG API base URL, for `scripts/producer.py` only (the consumer reads it from each message) |
 | `RAG_API_KEY` | — | RAG API bearer token, for `scripts/producer.py` only |
 | `CONCURRENCY` | `1` | Max messages processed in parallel |
@@ -53,7 +54,8 @@ The body is a JSON object, the way cozy-stack publishes it (no custom AMQP heade
 |---|---|---|
 | `action` | yes | `upsert`, `delete` or `sync` |
 | `partition`, `file_id` | yes | Where the file lives in openRAG |
-| `rag_base_url`, `rag_api_key` | yes | The openRAG server of the instance |
+| `rag_base_url` | yes | The openRAG server of the instance |
+| `rag_api_key` | without `RAG_API_KEYS` | Its API key, ignored when `RAG_API_KEYS` is set: the broker then carries no openRAG key |
 | `name` | upsert | File name: openRAG picks its parser from the extension |
 | `md5sum` | upsert | Hex digest: the file is uploaded again only when it differs from the indexed one |
 | `file_url` | upsert | Self-authenticating download URL of the content |
