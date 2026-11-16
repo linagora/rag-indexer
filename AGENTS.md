@@ -43,7 +43,7 @@ Producer -> RabbitMQ (topic exchange) -> rag-indexer -> RAG API
 - Business fields are a JSON object in the message body, the format cozy-stack's publisher sends. AMQP headers only carry what the broker adds (`x-death`).
 - File content is always downloaded from `file_url`; the AMQP body never carries the binary. An upsert's URL is self-authenticating; a sync's (`<state_url>/content`) takes the `file_token` bearer.
 - A `sync` carries no file state: it is read on `state_url` when the message is processed (404: delete), so a retried message cannot undo a newer one. Its `workspace_ids` set the file's memberships on openRAG.
-- RAG connection info (`rag_base_url`, `rag_api_key`) comes per-message, not from global config.
+- The openRAG server comes per-message (`rag_base_url`), its API key from `RAG_API_KEYS` (base URL -> key), which is also the list of the servers the consumer may call. Without `RAG_API_KEYS`, the key is read from the message (`rag_api_key`), the format of the older producers.
 - Retry count is derived from `x-death` header entries with `reason=expired`, not a custom counter.
 - Upsert is idempotent: skips indexing when the remote `md5sum` matches the message's.
 - `md5sum` identifies the content, `doc_rev` orders the status callbacks on the cozy side: the two never stand in for each other.

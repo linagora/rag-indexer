@@ -3,6 +3,12 @@ import json
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _no_rag_api_keys(monkeypatch):
+    # config loads .env at import: keep a local RAG_API_KEYS out of the tests.
+    monkeypatch.setattr("rag_indexer.config.RAG_API_KEYS", {})
+
+
 class FakeResp:
     """Mimics RagResponse returned by rag_get_file / rag_delete."""
     def __init__(self, status: int, json_data=None, text_data=""):

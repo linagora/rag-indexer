@@ -33,6 +33,8 @@ class World:
     rag: dict[str, RagFile] = field(default_factory=dict)
     workspaces: set[str] = field(default_factory=lambda: {"ws1", "ws2", "old"})
     calls: list[tuple[str, str]] = field(default_factory=list)
+    # The Authorization headers sent to openRAG.
+    rag_auth: set[str] = field(default_factory=set)
 
     def uploads(self) -> list[str]:
         return [m for m, p in self.calls if p.startswith("/indexer/") and m in ("POST", "PUT")]
@@ -105,6 +107,8 @@ def make_app(world: World) -> web.Application:
     @web.middleware
     async def record(request, handler):
         world.calls.append((request.method, request.path))
+        if not request.path.startswith("/ai/"):
+            world.rag_auth.add(request.headers.get("Authorization", ""))
         return await handler(request)
 
     app = web.Application(middlewares=[record])
@@ -145,6 +149,31 @@ async def sync(world, file_id="f1", **overrides):
         "rag_api_key": "rag-key",
     } | overrides
     await process_message(DummyMessage(fields), session)
+
+
+async def test_key_of_the_server_comes_from_the_config(world, monkeypatch):
+    w, base, _ = world
+    monkeypatch.setattr("rag_indexer.config.RAG_API_KEYS", {base: "conf-key"})
+    w.stack["f1"] = StackFile(b"hello")
+    await sync(world, rag_base_url=base + "/", rag_api_key="msg-key")
+    assert "f1" in w.rag
+    assert w.rag_auth == {"Bearer conf-key"}, "the key of the message is ignored"
+
+
+async def test_server_missing_from_the_config_is_refused_before_any_call(world, monkeypatch):
+    w, _, _ = world
+    monkeypatch.setattr("rag_indexer.config.RAG_API_KEYS", {"https://openrag.example": "conf-key"})
+    w.stack["f1"] = StackFile(b"hello")
+    with pytest.raises(FatalError, match="not in RAG_API_KEYS"):
+        await sync(world)
+    assert w.calls == [], "neither the stack nor the unknown server is called"
+
+
+async def test_without_config_the_key_of_the_message_is_used(world):
+    w, _, _ = world
+    w.stack["f1"] = StackFile(b"hello")
+    await sync(world)
+    assert w.rag_auth == {"Bearer rag-key"}
 
 
 async def test_file_gone_on_the_stack_is_deleted(world):
