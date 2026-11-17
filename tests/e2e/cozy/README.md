@@ -71,7 +71,8 @@ python3 -I tests/e2e/cozy/scenarios.py S03 S15  # some of them
 
 Without an openRAG, `openrag_stub.py` stands in for one: in memory, the routes the stack,
 the indexer and these scenarios call, a search that matches the uploaded bytes. It cannot
-tell whether openRAG parses a file.
+tell whether openRAG parses a file. The `e2e-cozy` CI job runs `scenarios.py` this way,
+against a cozy-stack built from the branch it names; `faults.py` is not run there.
 
 ```sh
 python3 -I tests/e2e/cozy/openrag_stub.py 8090 "$E2E_RAG_API_KEY"   # E2E_RAG_URL=http://127.0.0.1:8090
