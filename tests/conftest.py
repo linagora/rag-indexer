@@ -4,9 +4,10 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _no_rag_api_keys(monkeypatch):
-    # config loads .env at import: keep a local RAG_API_KEYS out of the tests.
-    monkeypatch.setattr("rag_indexer.config.RAG_API_KEYS", {})
+def _no_rag_server(monkeypatch):
+    # config loads .env at import: keep a local RAG_BASE_URL out of the tests.
+    monkeypatch.setattr("rag_indexer.config.RAG_BASE_URL", "")
+    monkeypatch.setattr("rag_indexer.config.RAG_API_KEY", "")
 
 
 class FakeResp:

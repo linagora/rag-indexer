@@ -153,7 +153,8 @@ async def sync(world, file_id="f1", **overrides):
 
 async def test_key_of_the_server_comes_from_the_config(world, monkeypatch):
     w, base, _ = world
-    monkeypatch.setattr("rag_indexer.config.RAG_API_KEYS", {base: "conf-key"})
+    monkeypatch.setattr("rag_indexer.config.RAG_BASE_URL", base)
+    monkeypatch.setattr("rag_indexer.config.RAG_API_KEY", "conf-key")
     w.stack["f1"] = StackFile(b"hello")
     await sync(world, rag_base_url=base + "/", rag_api_key="msg-key")
     assert "f1" in w.rag
@@ -162,9 +163,10 @@ async def test_key_of_the_server_comes_from_the_config(world, monkeypatch):
 
 async def test_server_missing_from_the_config_is_refused_before_any_call(world, monkeypatch):
     w, _, _ = world
-    monkeypatch.setattr("rag_indexer.config.RAG_API_KEYS", {"https://openrag.example": "conf-key"})
+    monkeypatch.setattr("rag_indexer.config.RAG_BASE_URL", "https://openrag.example")
+    monkeypatch.setattr("rag_indexer.config.RAG_API_KEY", "conf-key")
     w.stack["f1"] = StackFile(b"hello")
-    with pytest.raises(FatalError, match="not in RAG_API_KEYS"):
+    with pytest.raises(FatalError, match="is not RAG_BASE_URL"):
         await sync(world)
     assert w.calls == [], "neither the stack nor the unknown server is called"
 
