@@ -25,4 +25,15 @@ dev = [
     "pytest-docker>=3.2.5",
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
+    "ruff>=0.17.5",
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# Best-effort cleanups and the consumer's catch-all swallow every error on purpose.
+"rag_indexer/main.py" = ["BLE001", "S110"]
+"rag_indexer/transport.py" = ["BLE001"]
+"tests/**" = ["BLE001", "S110", "ISC004", "PLW1510", "RUF059", "SIM117"]
+"tests/unit/test_errors.py" = ["B017"]
+# Its lambdas are polled by wait() inside the loop iteration that builds them.
+"tests/e2e/cozy/scenarios.py" = ["B023"]
+"scripts/**" = ["ASYNC230"]

@@ -7,23 +7,22 @@ from datetime import datetime
 
 import aiohttp
 import pytest
+from aio_pika import DeliveryMode, Message
 from aiohttp import web
 from aiohttp.test_utils import TestServer
-from aio_pika import Message, DeliveryMode
 
+from rag_indexer import transport
 from rag_indexer.config import DLQ_NAME
 from rag_indexer.errors import TransientError
-from rag_indexer import transport
 from rag_indexer.processing import extract_metadata, get_retry_count
 from rag_indexer.transport import publish_to_dlq
-
 from tests.e2e.conftest import (
-    publish_msg,
+    E2E_EXCHANGE,
+    TESTFILE_CONTENT,
     consume_and_process,
     consume_unpatched,
+    publish_msg,
     publish_upsert_msg,
-    TESTFILE_CONTENT,
-    E2E_EXCHANGE,
 )
 
 pytestmark = [
@@ -393,11 +392,10 @@ async def test_upsert_without_callback_token_still_works(rmq, rag_base_url, rag_
     assert posts, "Expected a POST for doc-no-token"
     assert "callback_token" not in posts[-1]
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(
-            f"{rag_base_url}/partition/e2e-test-auto/file/doc-no-token"
-        ) as resp:
-            assert resp.status == 200
+    async with aiohttp.ClientSession() as session, session.get(
+        f"{rag_base_url}/partition/e2e-test-auto/file/doc-no-token"
+    ) as resp:
+        assert resp.status == 200
 
 
 async def test_dlq_callback_is_authenticated(rmq, rag_base_url):

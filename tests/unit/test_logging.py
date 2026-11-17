@@ -1,6 +1,6 @@
 """Tests for sensitive-field scrubbing in structured logging."""
 
-from rag_indexer.logging import drop_sensitive_keys, _redact_url
+from rag_indexer.logging import _redact_url, drop_sensitive_keys
 
 
 def test_redact_url_keeps_only_scheme_and_host():

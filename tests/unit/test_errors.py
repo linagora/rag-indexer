@@ -3,7 +3,7 @@ and can be instantiated, raised, and caught independently."""
 
 import pytest
 
-from rag_indexer.errors import TransientError, FatalError
+from rag_indexer.errors import FatalError, TransientError
 
 
 def test_transient_error_is_exception_subclass():

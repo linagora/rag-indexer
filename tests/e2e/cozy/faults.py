@@ -23,8 +23,8 @@ for name in ("E2E_DOMAIN", "E2E_FAULTS_DOMAIN", "E2E_FAULTS_RAG_URL"):
 os.environ["E2E_DOMAIN"] = os.environ["E2E_FAULTS_DOMAIN"]
 os.environ["E2E_RAG_URL"] = os.environ["E2E_FAULTS_RAG_URL"]
 sys.path.insert(0, HERE)
-from lib import *  # noqa: E402,F403
-from lib import env  # noqa: E402
+from lib import *
+from lib import env
 
 FAULT_MODE_FILE = env("E2E_FAULT_MODE_FILE")
 INDEXER_HEALTH = env("E2E_INDEXER_HEALTH_URL", "http://localhost:8080/health")

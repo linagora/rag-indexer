@@ -1,12 +1,10 @@
-import asyncio
-
 import aiohttp
 import pytest
 
 from rag_indexer import rag_client
-from rag_indexer.processing import process_message, get_retry_count, next_retry_queue
-from rag_indexer.errors import TransientError, FatalError
-from tests.conftest import FakeResp, DummyMessage
+from rag_indexer.errors import FatalError, TransientError
+from rag_indexer.processing import get_retry_count, next_retry_queue, process_message
+from tests.conftest import DummyMessage, FakeResp
 
 
 @pytest.fixture(autouse=True)
@@ -130,8 +128,6 @@ async def test_upsert_new_on_404_triggers_post(
             "is_new": is_new,
             "msg": msg,
         }
-        # Simule un succes
-        return None
 
     monkeypatch.setattr(rag_client, "rag_get_file", fake_get)
     monkeypatch.setattr(rag_client, "rag_upsert", fake_upsert)
@@ -169,7 +165,6 @@ async def test_upsert_update_on_md5_change_triggers_put(
 
     async def fake_upsert(session, msg, is_new):
         calls["upsert"] = {"is_new": is_new}
-        return None
 
     monkeypatch.setattr(rag_client, "rag_get_file", fake_get)
     monkeypatch.setattr(rag_client, "rag_upsert", fake_upsert)
@@ -307,13 +302,13 @@ async def test_upsert_get_429_raises_transient_error(monkeypatch, headers_base, 
 
 
 # ------------------------
-# ERRH-02: asyncio.TimeoutError wraps as TransientError
+# ERRH-02: TimeoutError wraps as TransientError
 # ------------------------
 @pytest.mark.asyncio
 async def test_timeout_raises_transient_error(monkeypatch, headers_base, aiohttp_session_stub):
-    """asyncio.TimeoutError must be caught and wrapped as TransientError."""
+    """TimeoutError must be caught and wrapped as TransientError."""
     async def fake_delete(session, rag, partition, file_id):
-        raise asyncio.TimeoutError("Request timed out")
+        raise TimeoutError("Request timed out")
 
     monkeypatch.setattr(rag_client, "rag_delete", fake_delete)
     headers = {**headers_base, "action": "delete"}
@@ -405,7 +400,6 @@ async def test_upsert_forwards_app_metadata_to_rag_upsert(
 
     async def fake_upsert(session, msg, is_new):
         captured["msg"] = msg
-        return None
 
     monkeypatch.setattr(rag_client, "rag_get_file", fake_get)
     monkeypatch.setattr(rag_client, "rag_upsert", fake_upsert)
@@ -495,7 +489,6 @@ async def test_upsert_get_200_no_md5sum_reindexes(
 
     async def fake_upsert(session, msg, is_new):
         calls["upsert"] = {"is_new": is_new}
-        return None
 
     monkeypatch.setattr(rag_client, "rag_get_file", fake_get)
     monkeypatch.setattr(rag_client, "rag_upsert", fake_upsert)
@@ -520,7 +513,6 @@ async def _capture_upsert_msg(monkeypatch, dummy_msg, session_stub):
 
     async def fake_upsert(session, msg, is_new):
         captured["msg"] = msg
-        return None
 
     monkeypatch.setattr(rag_client, "rag_get_file", fake_get)
     monkeypatch.setattr(rag_client, "rag_upsert", fake_upsert)

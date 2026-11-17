@@ -22,18 +22,17 @@ import rag_indexer.config as config_mod
 import rag_indexer.main as main_mod
 import rag_indexer.processing as processing_mod
 import rag_indexer.transport as transport_mod
-
 from tests.integration.conftest import (
+    TEST_DLQ,
     TEST_EXCHANGE,
     TEST_QUEUE,
-    TEST_DLQ,
-    TEST_ROUTING_KEY,
     TEST_RETRY_QUEUES,
+    TEST_ROUTING_KEY,
 )
 from tests.integration.test_retry_cycle import _consume_one
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
-import producer as producer_mod  # noqa: E402
+import producer as producer_mod
 
 pytestmark = pytest.mark.usefixtures("require_broker")
 

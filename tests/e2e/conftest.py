@@ -7,12 +7,12 @@ import aio_pika
 import aiohttp
 import pytest
 import pytest_asyncio
-from aio_pika import ExchangeType, Message, DeliveryMode
+from aio_pika import DeliveryMode, ExchangeType, Message
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from rag_indexer.processing import process_message
-from tests.integration.conftest import _docker_is_available, _amqp_is_responsive
+from tests.integration.conftest import _amqp_is_responsive, _docker_is_available
 
 # Served by the RAG stub's /testfile endpoint, the default file_url target.
 TESTFILE_CONTENT = b"e2e test file content"

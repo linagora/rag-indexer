@@ -1,4 +1,3 @@
-import asyncio
 import json
 import tempfile
 import time
@@ -10,8 +9,8 @@ import structlog
 from aiohttp import FormData
 
 from rag_indexer.config import HTTP_TIMEOUT
+from rag_indexer.errors import FatalError, TransientError, UnsupportedError
 from rag_indexer.models import FileState, IndexMessage, RagConn
-from rag_indexer.errors import TransientError, FatalError, UnsupportedError
 
 log = structlog.get_logger()
 
@@ -181,7 +180,7 @@ async def get_producer_file(session: aiohttp.ClientSession, msg: IndexMessage, d
         raise
     except FatalError:
         raise
-    except asyncio.TimeoutError as e:
+    except TimeoutError as e:
         raise TransientError(f"Timeout fetching file_url: {e}") from e
     except aiohttp.InvalidURL as e:
         # Its message is the URL itself, secret included: never put it in the error.
