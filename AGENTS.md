@@ -14,7 +14,7 @@ uv run pytest tests/unit/test_processing.py -v   # run a single test file
 uv run pytest tests/unit/ -v -k "test_name"      # run a single test by name
 ```
 
-Integration tests use `pytest-docker` to spin up RabbitMQ automatically. E2E tests live in `tests/e2e/` and use a stateful RAG stub. `tests/e2e/cozy/` is the end-to-end plan against a running cozy-stack, rag-indexer and openRAG (see its README); CI runs its `scenarios.py` with `openrag_stub.py` in place of openRAG.
+Integration tests use `pytest-docker` to spin up RabbitMQ automatically. `tests/e2e/cozy/` is the end-to-end plan against a running cozy-stack, rag-indexer and openRAG (see its README); CI runs its `scenarios.py` with `openrag_stub.py` in place of openRAG.
 
 ## Architecture
 
