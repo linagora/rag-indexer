@@ -99,3 +99,5 @@ Exposes `:8080/health` (RabbitMQ liveness) and `:8080/metrics` (Prometheus).
 make test        # unit tests only
 make test-all    # unit + integration (requires Docker for RabbitMQ)
 ```
+
+`tests/e2e/cozy/` holds the end-to-end plan against a running cozy-stack, rag-indexer and openRAG: see its README.
