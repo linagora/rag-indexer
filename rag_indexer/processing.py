@@ -53,6 +53,9 @@ def resolve_rag(fields: dict) -> RagConn:
     Raises FatalError for a server missing from RAG_API_KEYS: no retry makes it known.
     """
     base_url = (fields.get("rag_base_url") or "").rstrip("/")
+    if not base_url:
+        # Else aiohttp's InvalidURL, a ClientError, would send it through every retry.
+        raise FatalError("message without rag_base_url")
     if not config.RAG_API_KEYS:
         return RagConn(base_url=base_url, api_key=fields.get("rag_api_key", ""))
     key = config.RAG_API_KEYS.get(base_url)
