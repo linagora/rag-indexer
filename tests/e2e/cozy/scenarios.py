@@ -12,7 +12,7 @@ import zipfile
 import zlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from lib import *  # noqa: E402,F403
+from lib import *
 
 RUN = time.strftime("%H%M%S")
 QUIET_DELAY = 20  # trigger debounce (5s) + job + indexer, for the "nothing happens" checks

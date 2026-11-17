@@ -1,22 +1,21 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import aio_pika
 import aiohttp
 import structlog
-from aio_pika import ExchangeType, Message, DeliveryMode
+from aio_pika import DeliveryMode, ExchangeType, Message
 from aiohttp import web
 from prometheus_client.aiohttp import make_aiohttp_handler
 
 from rag_indexer.config import (
+    CALLBACK_TIMEOUT,
+    DLQ_NAME,
     EXCHANGE_NAME,
-    ROUTING_KEY,
     QUEUE_NAME,
     RETRY_QUEUES,
-    DLQ_NAME,
-    CALLBACK_TIMEOUT,
+    ROUTING_KEY,
 )
-from rag_indexer import rag_client
 from rag_indexer.processing import extract_metadata
 
 log = structlog.get_logger()
@@ -146,7 +145,7 @@ def send_status_callback(session: aiohttp.ClientSession, metadata: dict, status:
         "status": status,
         # Milliseconds and a "Z" suffix: the spelling cozy-stack documents and the one
         # OpenRAG emits, so both callback producers write the same timestamp.
-        "timestamp": datetime.now(timezone.utc)
+        "timestamp": datetime.now(UTC)
         .isoformat(timespec="milliseconds")
         .replace("+00:00", "Z"),
         "metadata": _file_metadata(metadata),

@@ -8,7 +8,7 @@ import os
 import sys
 
 import aio_pika
-from aio_pika import ExchangeType, Message, DeliveryMode
+from aio_pika import DeliveryMode, ExchangeType, Message
 from aiormq import AMQPConnectionError
 from dotenv import load_dotenv
 

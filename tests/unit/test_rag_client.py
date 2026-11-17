@@ -4,13 +4,13 @@ import json
 import aiohttp
 import pytest
 
-from rag_indexer.models import IndexMessage, RagConn, ContentSpec
+from rag_indexer.errors import FatalError, TransientError, UnsupportedError
+from rag_indexer.models import ContentSpec, IndexMessage, RagConn
 from rag_indexer.rag_client import (
-    get_producer_file,
     build_metadata,
+    get_producer_file,
     rag_upsert,
 )
-from rag_indexer.errors import FatalError, TransientError, UnsupportedError
 from tests.conftest import FakeContextResp, FakeSession
 
 

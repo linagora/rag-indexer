@@ -1,15 +1,13 @@
-import asyncio
 import json
 
 import aio_pika
 import aiohttp
 import structlog
 
-from rag_indexer import rag_client
-from rag_indexer import config
+from rag_indexer import config, rag_client
 from rag_indexer.config import RETRY_QUEUES
-from rag_indexer.models import IndexMessage, RagConn, ContentSpec
-from rag_indexer.errors import TransientError, FatalError, UnsupportedError
+from rag_indexer.errors import FatalError, TransientError, UnsupportedError
+from rag_indexer.models import ContentSpec, IndexMessage, RagConn
 
 log = structlog.get_logger()
 
@@ -181,7 +179,7 @@ async def process_message(
         raise
     except FatalError:
         raise
-    except asyncio.TimeoutError as e:
+    except TimeoutError as e:
         raise TransientError(f"Timeout: {e}") from e
     except aiohttp.ClientError as e:
         raise TransientError(f"Network error: {e}") from e

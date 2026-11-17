@@ -3,13 +3,11 @@ import os
 import shutil
 import subprocess
 
+import aio_pika
 import pytest
 import pytest_asyncio
-import aio_pika
 
-import rag_indexer.config as config
-import rag_indexer.processing as processing
-import rag_indexer.transport as transport
+from rag_indexer import config, processing, transport
 from rag_indexer.transport import declare_topology
 
 

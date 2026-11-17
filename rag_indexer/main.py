@@ -7,27 +7,27 @@ import aio_pika
 import aiohttp
 import structlog
 from aiormq import AMQPConnectionError
-from structlog.contextvars import clear_contextvars, bind_contextvars
+from structlog.contextvars import bind_contextvars, clear_contextvars
 
-from rag_indexer.config import RABBITMQ_URL, HTTP_TIMEOUT, CONCURRENCY, HEALTH_PORT
-from rag_indexer.errors import TransientError, FatalError, UnsupportedError
+from rag_indexer.config import CONCURRENCY, HEALTH_PORT, HTTP_TIMEOUT, RABBITMQ_URL
+from rag_indexer.errors import FatalError, TransientError, UnsupportedError
 from rag_indexer.logging import setup_logging
 from rag_indexer.metrics import MESSAGES_TOTAL, PROCESSING_DURATION
 from rag_indexer.processing import (
-    process_message,
+    extract_metadata,
     get_retry_count,
     next_retry_queue,
-    extract_metadata,
+    process_message,
 )
 from rag_indexer.transport import (
     declare_topology,
-    publish_to_retry,
-    publish_to_dlq,
-    send_status_callback,
     drain_status_callbacks,
-    start_health_server,
-    shutdown_event,
+    publish_to_dlq,
+    publish_to_retry,
     request_shutdown,
+    send_status_callback,
+    shutdown_event,
+    start_health_server,
 )
 
 
@@ -150,7 +150,7 @@ async def main():
                         timeout=10,
                     )
                     log.info("drain_complete")
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     remaining = len([t for t in in_flight if not t.done()])
                     log.warning("drain_timeout", remaining=remaining)
                     for task in list(in_flight):

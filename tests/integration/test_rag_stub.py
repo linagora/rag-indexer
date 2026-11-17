@@ -11,9 +11,8 @@ import pytest_asyncio
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-from rag_indexer.models import IndexMessage, RagConn, ContentSpec
-from rag_indexer.rag_client import rag_get_file, rag_delete, get_producer_file
-
+from rag_indexer.models import ContentSpec, IndexMessage, RagConn
+from rag_indexer.rag_client import get_producer_file, rag_delete, rag_get_file
 
 # ---------- RAG stub fixture ----------
 

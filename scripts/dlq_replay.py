@@ -23,7 +23,7 @@ if _project_root not in sys.path:
 import aio_pika
 from aio_pika import DeliveryMode
 
-from rag_indexer.config import RABBITMQ_URL, DLQ_NAME, EXCHANGE_NAME
+from rag_indexer.config import DLQ_NAME, EXCHANGE_NAME, RABBITMQ_URL
 from rag_indexer.processing import extract_metadata
 
 

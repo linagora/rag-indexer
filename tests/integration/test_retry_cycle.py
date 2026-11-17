@@ -12,21 +12,19 @@ from datetime import datetime
 import aio_pika
 import aiohttp
 import pytest
-from aio_pika import Message, DeliveryMode
+from aio_pika import DeliveryMode, Message
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from rag_indexer import rag_client, transport
 from rag_indexer.errors import FatalError, TransientError
-from rag_indexer.processing import process_message, get_retry_count, next_retry_queue
-from rag_indexer.transport import publish_to_retry, publish_to_dlq
-
+from rag_indexer.processing import get_retry_count, next_retry_queue, process_message
+from rag_indexer.transport import publish_to_dlq, publish_to_retry
 from tests.conftest import FakeResp
 from tests.integration.conftest import (
     TEST_EXCHANGE,
     TEST_RETRY_QUEUES,
 )
-
 
 pytestmark = pytest.mark.usefixtures("require_broker")
 
@@ -242,7 +240,6 @@ async def test_transient_error_then_success_on_retry(rmq_channel, monkeypatch):
 
     async def fake_upsert(session, msg, is_new):
         assert is_new is True
-        return None
 
     monkeypatch.setattr(rag_client, "rag_get_file", flaky_get)
     monkeypatch.setattr(rag_client, "rag_upsert", fake_upsert)
@@ -291,7 +288,6 @@ async def test_concurrent_messages_same_file(rmq_channel, monkeypatch):
     async def fake_upsert(session, msg, is_new):
         assert is_new is True
         store[msg.file_id] = msg.md5sum
-        return None
 
     monkeypatch.setattr(rag_client, "rag_get_file", fake_get)
     monkeypatch.setattr(rag_client, "rag_upsert", fake_upsert)
