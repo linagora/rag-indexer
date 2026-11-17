@@ -14,7 +14,8 @@ def test_rag_api_keys_drop_the_trailing_slash(monkeypatch):
 
 
 @pytest.mark.parametrize("raw", ['["https://a.example"]', '{"https://a.example": ""}', '{"": "k"}',
-                                 '{"https://a.example": 1}', "not json", "{}"])
+                                 '{"https://a.example": 1}', "not json", "{}",
+                                 '{"https://a.example/": "k1", "https://a.example": "k2"}', '{"/": "k"}'])
 def test_rag_api_keys_invalid(monkeypatch, raw):
     monkeypatch.setenv("RAG_API_KEYS", raw)
     with pytest.raises(ValueError):

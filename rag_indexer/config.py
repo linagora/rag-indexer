@@ -76,14 +76,22 @@ def parse_rag_api_keys() -> dict[str, str]:
     raw = os.getenv("RAG_API_KEYS", "").strip()
     if not raw:
         return {}
-    keys = json.loads(raw)
+    error = "RAG_API_KEYS must be a JSON object of distinct, non-empty base URLs to non-empty API keys"
+    try:
+        keys = json.loads(raw)
+    except ValueError:
+        raise ValueError(error) from None
     # An empty object would silently fall back to the keys of the messages.
     if not isinstance(keys, dict) or not keys or not all(
         isinstance(url, str) and url and isinstance(key, str) and key for url, key in keys.items()
     ):
-        raise ValueError("RAG_API_KEYS must be a JSON object of non-empty base URLs to non-empty API keys")
+        raise ValueError(error)
     # The base URLs of the messages are compared without their trailing slash.
-    return {url.rstrip("/"): key for url, key in keys.items()}
+    normalized = {url.rstrip("/"): key for url, key in keys.items()}
+    if len(normalized) != len(keys) or "" in normalized:
+        # "https://a/" and "https://a" would silently keep only one of their keys.
+        raise ValueError(error)
+    return normalized
 
 
 RAG_API_KEYS = parse_rag_api_keys()

@@ -326,6 +326,14 @@ async def test_unknown_action_raises_fatal_error(monkeypatch, headers_base, aioh
         await process_message(msg, aiohttp_session_stub)
 
 
+@pytest.mark.asyncio
+async def test_missing_rag_base_url_is_fatal(headers_base, aiohttp_session_stub):
+    """No server to call: no retry makes one appear."""
+    headers = {**headers_base, "action": "delete", "rag_base_url": ""}
+    with pytest.raises(FatalError, match="without rag_base_url"):
+        await process_message(DummyMessage(headers), aiohttp_session_stub)
+
+
 # ------------------------
 # get_retry_count: x-death parsing
 # ------------------------
