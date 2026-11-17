@@ -11,6 +11,10 @@ permissions:
 env:
   # Fail on a uv.lock out of date with pyproject.toml instead of relocking.
   UV_LOCKED: 1
+  # Print why each skipped test was skipped.
+  PYTEST_ADDOPTS: -rs
+  # The Python of the Dockerfile.
+  UV_PYTHON: "3.12"
 
 jobs:
   lint:
