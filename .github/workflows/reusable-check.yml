@@ -51,6 +51,7 @@ jobs:
       E2E_RAG_API_KEY: e2e-key
       E2E_INDEXER_LOG: /tmp/e2e/indexer.log
       E2E_STACK_LOG: /tmp/e2e/stack.log
+      E2E_FAULT_MODE_FILE: /tmp/e2e/fault.txt  # scenarios.py resets it; no fault proxy here
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

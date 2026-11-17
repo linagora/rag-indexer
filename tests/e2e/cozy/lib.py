@@ -73,6 +73,12 @@ def stack(method, path, body=None, ctype=None):
     return http(method, STACK + path, body, h)
 
 
+def fault(mode):
+    """Set the mode of fault_proxy.py."""
+    with open(env("E2E_FAULT_MODE_FILE"), "w") as f:
+        f.write(mode + "\n")
+
+
 def rag(method, path, body=None):
     return http(method, RAG_URL + path, body, {"Authorization": f"Bearer {RAG_KEY}"})
 

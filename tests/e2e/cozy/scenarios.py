@@ -19,6 +19,7 @@ QUIET_DELAY = 20  # trigger debounce (5s) + job + indexer, for the "nothing happ
 
 
 def setup(ctx):
+    fault("ok")  # a faults.py run killed mid-scenario leaves its fault on
     ensure_triggers()
     ctx["kb"] = mkdir(ROOT, f"KB-{RUN}")
     ctx["out"] = mkdir(ROOT, f"OUT-{RUN}")
