@@ -8,7 +8,8 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-from rag_indexer.errors import FatalError, TransientError
+from rag_indexer import rag_client
+from rag_indexer.errors import FatalError, TransientError, UnsupportedError
 from rag_indexer.processing import process_message
 from tests.conftest import DummyMessage
 
@@ -35,6 +36,8 @@ class World:
     calls: list[tuple[str, str]] = field(default_factory=list)
     # The Authorization headers sent to openRAG.
     rag_auth: set[str] = field(default_factory=set)
+    # What GET /indexer/supported/types answers, None for a 404.
+    extensions: list[str] | None = None
 
     def uploads(self) -> list[str]:
         return [m for m, p in self.calls if p.startswith("/indexer/") and m in ("POST", "PUT")]
@@ -104,6 +107,11 @@ def make_app(world: World) -> web.Application:
         world.rag[request.match_info["id"]].workspaces.discard(request.match_info["ws"])
         return web.Response(status=204)
 
+    async def supported_types(request):
+        if world.extensions is None:
+            raise web.HTTPNotFound()
+        return web.json_response({"extensions": world.extensions, "mimetypes": []})
+
     @web.middleware
     async def record(request, handler):
         world.calls.append((request.method, request.path))
@@ -113,6 +121,7 @@ def make_app(world: World) -> web.Application:
 
     app = web.Application(middlewares=[record])
     r = app.router
+    r.add_get("/indexer/supported/types", supported_types)
     r.add_get("/ai/index/files/{id}", state)
     r.add_get("/ai/index/files/{id}/content", content)
     r.add_get("/partition/{p}/file/{id}", rag_get)
@@ -123,6 +132,11 @@ def make_app(world: World) -> web.Application:
     r.add_post("/partition/{p}/workspaces/{ws}/files", add_to_workspace)
     r.add_delete("/partition/{p}/workspaces/{ws}/files/{id}", remove_from_workspace)
     return app
+
+
+@pytest.fixture(autouse=True)
+def no_cached_types():
+    rag_client._supported_extensions.clear()
 
 
 @pytest.fixture
@@ -176,6 +190,58 @@ async def test_without_config_the_key_of_the_message_is_used(world):
     w.stack["f1"] = StackFile(b"hello")
     await sync(world)
     assert w.rag_auth == {"Bearer rag-key"}
+
+
+async def test_format_openrag_refuses_is_never_downloaded(world):
+    w, _, _ = world
+    w.extensions = [".md", "pdf"]
+    w.stack["f1"] = StackFile(b"hello")  # its state names it doc.txt
+    with pytest.raises(UnsupportedError):
+        await sync(world)
+    assert not [p for _, p in w.calls if p.endswith("/content")], "downloaded"
+    assert w.uploads() == [] and "f1" not in w.rag
+
+
+async def test_unchanged_file_of_a_refused_format_still_syncs_its_workspaces(world):
+    w, _, _ = world
+    w.extensions = ["pdf"]
+    w.stack["f1"] = StackFile(b"hello")  # doc.txt, indexed before txt was refused
+    w.rag["f1"] = RagFile(b"hello", {"md5sum": "md5-1"}, {"old"})
+    await sync(world)
+    assert w.rag["f1"].workspaces == {"ws1"}
+
+
+async def test_formats_unknown_are_cached_too(world):
+    w, _, _ = world
+    w.stack["f1"] = StackFile(b"hello")
+    w.stack["f2"] = StackFile(b"world", md5sum="md5-2")
+    await sync(world, "f1")
+    await sync(world, "f2")
+    assert [p for _, p in w.calls].count("/indexer/supported/types") == 1
+
+
+async def test_supported_format_is_indexed_and_the_formats_are_cached(world):
+    w, _, _ = world
+    w.extensions = [".TXT"]
+    w.stack["f1"] = StackFile(b"hello")
+    w.stack["f2"] = StackFile(b"world", md5sum="md5-2")
+    await sync(world, "f1")
+    await sync(world, "f2")
+    assert "f1" in w.rag and "f2" in w.rag
+    assert [p for _, p in w.calls].count("/indexer/supported/types") == 1
+
+
+async def test_formats_unknown_every_file_is_sent(world):
+    w, _, _ = world
+    w.stack["f1"] = StackFile(b"hello")
+    await sync(world)
+    assert "f1" in w.rag
+
+
+def test_file_extension():
+    assert rag_client.file_extension("a.Tar.GZ") == "gz"
+    assert rag_client.file_extension("LICENSE") == ""
+    assert rag_client.file_extension(".bashrc") == "bashrc"
 
 
 async def test_file_gone_on_the_stack_is_deleted(world):

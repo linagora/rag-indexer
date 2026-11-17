@@ -72,8 +72,10 @@ a retried message cannot undo a newer one, a deleted file in particular.
 
 The status callback is the payload of cozy-stack's `POST /ai/index/status`.
 openRAG posts `success` or `error` once it has indexed the file; the indexer itself
-posts `error` when a message lands in the DLQ, and `notsupported` when openRAG refuses
-the format (the message is then acked).
+posts `error` when a message lands in the DLQ, and `notsupported` when openRAG does not
+index the format (the message is then acked). The format is checked on the extension of
+the name, against `GET /indexer/supported/types` (read again every 5 minutes per server),
+before the file is downloaded; a 415 of openRAG on the upload is handled the same way.
 
 openRAG refuses a `callback_url` on a private address unless
 `INDEXING_CALLBACK_ALLOW_PRIVATE_URLS=true`: set it on a dev stack whose cozy-stack

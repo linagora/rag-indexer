@@ -9,7 +9,7 @@ from rag_indexer import rag_client
 from rag_indexer import config
 from rag_indexer.config import RETRY_QUEUES
 from rag_indexer.models import IndexMessage, RagConn, ContentSpec
-from rag_indexer.errors import TransientError, FatalError
+from rag_indexer.errors import TransientError, FatalError, UnsupportedError
 
 log = structlog.get_logger()
 
@@ -163,6 +163,12 @@ async def process_message(
                 await sync_membership(session, msg)
                 return
 
+            # Spares downloading a file openRAG would refuse with a 415. After the md5sum
+            # check: a file indexed before openRAG dropped its format still syncs its memberships.
+            extensions = await rag_client.supported_extensions(session, msg.rag)
+            ext = rag_client.file_extension(msg.name)
+            if extensions is not None and ext not in extensions:
+                raise UnsupportedError(f"openRAG does not index the {ext or 'extensionless'} files")
             await rag_client.rag_upsert(session, msg, is_new)
             if not is_new:
                 # A PUT re-embeds the content: make sure the memberships survived it.
