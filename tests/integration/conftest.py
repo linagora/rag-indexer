@@ -19,7 +19,8 @@ def _docker_is_available() -> bool:
         result = subprocess.run(
             ["docker", "info"],
             capture_output=True,
-            timeout=5,
+            # A cold daemon (a fresh CI runner) can take over 5s to answer.
+            timeout=30,
         )
         return result.returncode == 0
     except (subprocess.TimeoutExpired, OSError):
