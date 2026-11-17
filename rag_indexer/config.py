@@ -1,4 +1,3 @@
-import json
 import os
 
 import aiohttp
@@ -67,34 +66,22 @@ RETRY_QUEUES = build_retry_queues(RETRY_INTERVALS)
 MAX_RETRIES = len(RETRY_QUEUES)
 DLQ_NAME = os.getenv("DLQ_NAME", "rag.index.dlq")
 
-def parse_rag_api_keys() -> dict[str, str]:
-    """Parse RAG_API_KEYS, a JSON object of openRAG base URL -> API key.
+def parse_rag_server() -> tuple[str, str]:
+    """Read RAG_BASE_URL and RAG_API_KEY, the openRAG server the consumer may call and its key.
 
-    It is also the list of the servers a message may name: reading the broker gives
-    no access to openRAG, and a message cannot send a key to an arbitrary URL.
+    Messages for another server are refused: reading the broker gives no access to
+    openRAG, and a message cannot send the key to an arbitrary URL. ("", "") when unset.
     """
-    raw = os.getenv("RAG_API_KEYS", "").strip()
-    if not raw:
-        return {}
-    error = "RAG_API_KEYS must be a JSON object of distinct, non-empty base URLs to non-empty API keys"
-    try:
-        keys = json.loads(raw)
-    except ValueError:
-        raise ValueError(error) from None
-    # An empty object would silently fall back to the keys of the messages.
-    if not isinstance(keys, dict) or not keys or not all(
-        isinstance(url, str) and url and isinstance(key, str) and key for url, key in keys.items()
-    ):
-        raise ValueError(error)
     # The base URLs of the messages are compared without their trailing slash.
-    normalized = {url.rstrip("/"): key for url, key in keys.items()}
-    if len(normalized) != len(keys) or "" in normalized:
-        # "https://a/" and "https://a" would silently keep only one of their keys.
-        raise ValueError(error)
-    return normalized
+    url = os.getenv("RAG_BASE_URL", "").strip().rstrip("/")
+    key = os.getenv("RAG_API_KEY", "").strip()
+    # Only one of the two would silently fall back to the keys of the messages.
+    if bool(url) != bool(key):
+        raise ValueError("RAG_BASE_URL and RAG_API_KEY go together: set both, or neither")
+    return url, key
 
 
-RAG_API_KEYS = parse_rag_api_keys()
+RAG_BASE_URL, RAG_API_KEY = parse_rag_server()
 
 CONCURRENCY = int(os.getenv("CONCURRENCY", "1"))
 

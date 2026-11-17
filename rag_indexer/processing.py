@@ -50,18 +50,17 @@ def next_retry_queue(retry_count: int) -> str | None:
 def resolve_rag(fields: dict) -> RagConn:
     """The openRAG server of the message, with the API key the indexer holds for it.
 
-    Raises FatalError for a server missing from RAG_API_KEYS: no retry makes it known.
+    Raises FatalError for a server other than RAG_BASE_URL: no retry makes it known.
     """
     base_url = (fields.get("rag_base_url") or "").rstrip("/")
     if not base_url:
         # Else aiohttp's InvalidURL, a ClientError, would send it through every retry.
         raise FatalError("message without rag_base_url")
-    if not config.RAG_API_KEYS:
+    if not config.RAG_BASE_URL:
         return RagConn(base_url=base_url, api_key=fields.get("rag_api_key", ""))
-    key = config.RAG_API_KEYS.get(base_url)
-    if key is None:
-        raise FatalError(f"openRAG server {base_url!r} is not in RAG_API_KEYS")
-    return RagConn(base_url=base_url, api_key=key)
+    if base_url != config.RAG_BASE_URL:
+        raise FatalError(f"openRAG server {base_url!r} is not RAG_BASE_URL")
+    return RagConn(base_url=base_url, api_key=config.RAG_API_KEY)
 
 
 async def resolve_sync(session: aiohttp.ClientSession, msg: IndexMessage) -> IndexMessage:

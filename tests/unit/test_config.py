@@ -1,22 +1,23 @@
 import pytest
 
-from rag_indexer.config import parse_rag_api_keys
+from rag_indexer.config import parse_rag_server
 
 
-def test_rag_api_keys_unset(monkeypatch):
-    monkeypatch.delenv("RAG_API_KEYS", raising=False)
-    assert parse_rag_api_keys() == {}
+def test_rag_server_unset(monkeypatch):
+    monkeypatch.delenv("RAG_BASE_URL", raising=False)
+    monkeypatch.delenv("RAG_API_KEY", raising=False)
+    assert parse_rag_server() == ("", "")
 
 
-def test_rag_api_keys_drop_the_trailing_slash(monkeypatch):
-    monkeypatch.setenv("RAG_API_KEYS", '{"https://a.example/": "ka", "http://b:8000": "kb"}')
-    assert parse_rag_api_keys() == {"https://a.example": "ka", "http://b:8000": "kb"}
+def test_rag_server_drops_the_trailing_slash(monkeypatch):
+    monkeypatch.setenv("RAG_BASE_URL", "https://a.example/")
+    monkeypatch.setenv("RAG_API_KEY", "k")
+    assert parse_rag_server() == ("https://a.example", "k")
 
 
-@pytest.mark.parametrize("raw", ['["https://a.example"]', '{"https://a.example": ""}', '{"": "k"}',
-                                 '{"https://a.example": 1}', "not json", "{}",
-                                 '{"https://a.example/": "k1", "https://a.example": "k2"}', '{"/": "k"}'])
-def test_rag_api_keys_invalid(monkeypatch, raw):
-    monkeypatch.setenv("RAG_API_KEYS", raw)
+@pytest.mark.parametrize("url, key", [("https://a.example", ""), ("", "k"), ("/", "k")])
+def test_rag_server_needs_both(monkeypatch, url, key):
+    monkeypatch.setenv("RAG_BASE_URL", url)
+    monkeypatch.setenv("RAG_API_KEY", key)
     with pytest.raises(ValueError):
-        parse_rag_api_keys()
+        parse_rag_server()
