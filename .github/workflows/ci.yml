@@ -31,3 +31,92 @@ jobs:
       - uses: astral-sh/setup-uv@v10.3.3
       # Integration tests start RabbitMQ through Docker, available on the runner.
       - run: make test-all
+
+  # tests/e2e/cozy/scenarios.py with openrag_stub.py in place of openRAG (see the README there).
+  e2e-cozy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      couchdb:
+        image: couchdb:3.3.3
+        env:
+          COUCHDB_USER: admin
+          COUCHDB_PASSWORD: password
+        ports: ["5984:5984"]
+      rabbitmq:
+        image: rabbitmq:3.13-management
+        ports: ["5672:5672", "15672:15672"]
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 5s --health-timeout 10s --health-retries 10
+    env:
+      # The stack publishes the sync messages from this branch until it is merged.
+      COZY_STACK_REF: feat/rag-index-rabbitmq
+      COZY_STACK_BIN: /tmp/e2e/cozy-stack
+      COZY_ADMIN_PORT: "6060"
+      E2E_DOMAIN: e2e.localhost:8080
+      E2E_RAG_URL: http://127.0.0.1:8090
+      E2E_RAG_API_KEY: e2e-key
+      E2E_INDEXER_LOG: /tmp/e2e/indexer.log
+      E2E_STACK_LOG: /tmp/e2e/stack.log
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: linagora/cozy-stack
+          ref: ${{ env.COZY_STACK_REF }}
+          path: cozy-stack
+      - uses: actions/setup-go@v7.1.0
+        with:
+          go-version-file: cozy-stack/go.mod
+          cache-dependency-path: cozy-stack/go.sum
+      - uses: astral-sh/setup-uv@v10.3.3
+      - run: mkdir -p /tmp/e2e && go build -C cozy-stack -o "$COZY_STACK_BIN" .
+      - run: uv sync
+      - name: Start openRAG stub and rag-indexer
+        run: |
+          nohup python3 -I tests/e2e/cozy/openrag_stub.py 8090 "$E2E_RAG_API_KEY" > /tmp/e2e/stub.log 2>&1 &
+          timeout 10 sh -c 'until curl -s -o /dev/null http://127.0.0.1:8090/; do sleep 1; done'
+          RAG_BASE_URL="$E2E_RAG_URL" RAG_API_KEY="$E2E_RAG_API_KEY" HEALTH_PORT=8081 \
+          LOG_LEVEL=DEBUG CONCURRENCY=4 RETRY_INTERVALS=5000,15000,30000 \
+          nohup uv run python -m rag_indexer > "$E2E_INDEXER_LOG" 2>&1 &
+          timeout 60 sh -c 'until curl -sf http://127.0.0.1:8081/health; do sleep 1; done'
+      - name: Start cozy-stack
+        run: |
+          cat > /tmp/e2e/cozy.yml <<YAML
+          host: localhost
+          port: 8080
+          admin:
+            host: localhost
+            port: $COZY_ADMIN_PORT
+          fs:
+            url: file:///tmp/e2e/storage
+          couchdb:
+            url: http://admin:password@127.0.0.1:5984/
+          rag:
+            default:
+              url: $E2E_RAG_URL
+              api_key: $E2E_RAG_API_KEY
+          rabbitmq:
+            enabled: true
+            nodes:
+              default:
+                enabled: true
+                url: amqp://guest:guest@127.0.0.1:5672/
+            exchanges:
+              - name: rag.index.topic
+                kind: topic
+                durable: true
+                declare_exchange: false
+          YAML
+          echo "127.0.0.1 ${E2E_DOMAIN%:*}" | sudo tee -a /etc/hosts
+          timeout 60 sh -c 'until curl -sf http://127.0.0.1:5984/_up; do sleep 1; done'
+          nohup "$COZY_STACK_BIN" serve --config /tmp/e2e/cozy.yml > "$E2E_STACK_LOG" 2>&1 &
+          timeout 60 sh -c 'until curl -sf http://localhost:8080/version; do sleep 1; done'
+          "$COZY_STACK_BIN" instances add "$E2E_DOMAIN" --passphrase e2e --admin-port "$COZY_ADMIN_PORT"
+      - run: python3 -I tests/e2e/cozy/scenarios.py
+      - if: failure()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: e2e-cozy-logs
+          path: /tmp/e2e/*.log
