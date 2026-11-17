@@ -1,8 +1,8 @@
 """Failure scenarios of the indexing of a cozy-stack instance through rag-indexer.
 
-They run on the instance E2E_FAULTS_DOMAIN, whose openRAG server is the one of
-E2E_RAG_URL behind fault_proxy.py (E2E_FAULTS_RAG_URL), and stop and start the
-indexer and RabbitMQ with the commands of the environment (see README.md).
+They run on the instance E2E_FAULTS_DOMAIN, inject openRAG errors through
+fault_proxy.py (E2E_RAG_PROXY_URL), and stop and start the indexer and RabbitMQ
+with the commands of the environment (see README.md).
 
 python3 -I tests/e2e/cozy/faults.py [F01 F02 ...]   (all by default)
 """
@@ -17,23 +17,17 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 # The other instance, the one of the functional scenarios.
 OTHER_DOMAIN = os.environ.get("E2E_DOMAIN", "")
-for name in ("E2E_DOMAIN", "E2E_FAULTS_DOMAIN", "E2E_FAULTS_RAG_URL"):
+for name in ("E2E_DOMAIN", "E2E_FAULTS_DOMAIN", "E2E_RAG_PROXY_URL"):
     if not os.environ.get(name):
         sys.exit(f"{name} is not set: see tests/e2e/cozy/env.example")
 os.environ["E2E_DOMAIN"] = os.environ["E2E_FAULTS_DOMAIN"]
-os.environ["E2E_RAG_URL"] = os.environ["E2E_FAULTS_RAG_URL"]
 sys.path.insert(0, HERE)
 from lib import *
 from lib import env
 
-FAULT_MODE_FILE = env("E2E_FAULT_MODE_FILE")
+PROXY_URL = env("E2E_RAG_PROXY_URL").rstrip("/")
 INDEXER_HEALTH = env("E2E_INDEXER_HEALTH_URL", "http://localhost:8080/health")
 RUN = time.strftime("%H%M%S")
-
-
-def fault(mode):
-    with open(FAULT_MODE_FILE, "w") as f:
-        f.write(mode + "\n")
 
 
 def run(command_env):
@@ -111,7 +105,8 @@ def F01_indexer_down(ctx, note):
         assert msg["doc_rev"] == rev, (msg["doc_rev"], rev)
         assert msg["state_url"] == f"{STACK}/ai/index/files/{f1}"
         assert msg["callback_url"] == f"{STACK}/ai/index/status"
-        assert msg["rag_base_url"] == RAG_URL and "rag_api_key" not in msg, "the broker must carry no openRAG key"
+        assert msg["rag_base_url"] == PROXY_URL, (msg["rag_base_url"], PROXY_URL)
+        assert "rag_api_key" not in msg, "the broker must carry no openRAG key"
 
         def get(url, tok):
             return http("GET", url, headers={"Authorization": f"Bearer {tok}"} if tok else {}, raw=True)
@@ -293,7 +288,7 @@ def F10_long_rabbitmq_outage(ctx, note):
 
 @scenario
 def F11_unknown_server(ctx, note):
-    """Message for an openRAG server missing from RAG_API_KEYS: DLQ at once, the server is never called"""
+    """Message for an openRAG server other than RAG_BASE_URL: DLQ at once, the server is never called"""
     f = upload(ctx["kb"], "inconnu.txt", text(uniq()))
     wait(indexed(f, md5_of(f)), what="indexed")
     msg = dict(peek_one_for(f))
@@ -308,7 +303,7 @@ def F11_unknown_server(ctx, note):
     assert s == 200 and body.get("routed"), body
     t = wait(lambda: events(m, f, "message_fatal"), timeout=30, what="fatal")
     err = events(m, f, "message_fatal")[0]["error"]
-    assert "RAG_API_KEYS" in err and not events(m, f, "rag_api_call") and not events(m, f, "stack_api_call"), err
+    assert "RAG_BASE_URL" in err and not events(m, f, "rag_api_call") and not events(m, f, "stack_api_call"), err
     note(f"DLQ after {t}s: {err}")
     http("DELETE", f"{MGMT}/queues/%2F/rag.index.dlq/contents", headers=MGMT_AUTH)
 

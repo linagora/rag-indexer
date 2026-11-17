@@ -12,20 +12,18 @@ They need a real openRAG: a stub cannot tell whether a PDF was parsed or a text 
 Start these yourself, then fill in a copy of `env.example` (out of the repository: it holds
 the openRAG key).
 
-- openRAG at `E2E_RAG_URL`.
-- `fault_proxy.py` in front of it, for the failure scenarios:
-  `python3 -I tests/e2e/cozy/fault_proxy.py "$E2E_RAG_URL" 8106 "$E2E_FAULT_MODE_FILE"`.
+- openRAG at `E2E_RAG_URL`. The scenarios query it directly.
+- `fault_proxy.py` in front of it, at `E2E_RAG_PROXY_URL`. The stack and the indexer reach
+  openRAG through it, and it forwards everything until a failure scenario makes it fail.
+  Start it with `python3 -I tests/e2e/cozy/fault_proxy.py "$E2E_RAG_URL" 8106 "$E2E_FAULT_MODE_FILE"`.
 - RabbitMQ with its management plugin.
-- cozy-stack with the `rag.index.topic` exchange and both openRAG servers:
+- cozy-stack with the `rag.index.topic` exchange and the proxy as its openRAG server:
 
   ```yaml
   rag:
     default:
-      url: https://openrag.example        # E2E_RAG_URL
-      api_key: ...
-    proxy:
-      url: http://127.0.0.1:8106          # E2E_FAULTS_RAG_URL
-      api_key: ...                        # the same key
+      url: http://127.0.0.1:8106          # E2E_RAG_PROXY_URL
+      api_key: ...                        # the key of E2E_RAG_URL
   rabbitmq:
     enabled: true
     nodes:
@@ -39,8 +37,7 @@ the openRAG key).
         declare_exchange: false
   ```
 
-- Two fresh instances: `E2E_DOMAIN`, and `E2E_FAULTS_DOMAIN` with
-  `cozy-stack features flags --domain "$E2E_FAULTS_DOMAIN" '{"rag.server": "proxy"}'`.
+- Two fresh instances, `E2E_DOMAIN` and `E2E_FAULTS_DOMAIN`.
   The scenarios create the two `rag-index` triggers of the stack's `docs/ai.md`, with a 5 s
   debounce, when the instance has none.
 - rag-indexer, logging to `E2E_INDEXER_LOG`, with short retries so that a message
@@ -49,7 +46,7 @@ the openRAG key).
   ```sh
   RABBITMQ_URL=amqp://guest:guest@localhost:5672/ LOG_LEVEL=DEBUG CONCURRENCY=4 \
   RETRY_INTERVALS=5000,15000,30000 \
-  RAG_API_KEYS='{"https://openrag.example": "...", "http://127.0.0.1:8106": "..."}' \
+  RAG_BASE_URL="$E2E_RAG_PROXY_URL" RAG_API_KEY="$E2E_RAG_API_KEY" \
   uv run python -m rag_indexer >> /tmp/rag-indexer.log 2>&1
   ```
 
@@ -68,6 +65,9 @@ python3 -I tests/e2e/cozy/scenarios.py          # functional, about 6 minutes
 python3 -I tests/e2e/cozy/faults.py             # failures, about 9 minutes
 python3 -I tests/e2e/cozy/scenarios.py S03 S15  # some of them
 ```
+
+Run them one after the other: both instances share the fault proxy, so a fault of
+`faults.py` would fail the functional scenarios running at the same time.
 
 Without an openRAG, `openrag_stub.py` stands in for one: in memory, the routes the stack,
 the indexer and these scenarios call, a search that matches the uploaded bytes. It cannot
@@ -128,4 +128,4 @@ when done.
 | F08 | No queue bound to the exchange | publication refused (`NO_ROUTE`), checkpoint kept; queue declared again: indexed |
 | F09 | Partitions | a file of one instance is not on the partition of the other |
 | F10 | RabbitMQ stopped for about 2 minutes | indexed once it is back; the next change goes through too |
-| F11 | Message for a server missing from `RAG_API_KEYS` | DLQ at once, neither the stack nor that server called |
+| F11 | Message for a server other than `RAG_BASE_URL` | DLQ at once, neither the stack nor that server called |
