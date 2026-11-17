@@ -39,6 +39,8 @@ All settings are via environment variables (see `env.example`):
 | `RABBITMQ_URL` | `amqp://guest:guest@localhost:5672/` | AMQP connection string |
 | `RAG_BASE_URL` | — | The openRAG server the consumer may call: a message for another server goes to the DLQ. Set it with `RAG_API_KEY`, or neither: the key is then read from the message (`rag_api_key`) |
 | `RAG_API_KEY` | — | The API key of `RAG_BASE_URL` |
+| `PRODUCER_TEST_BASE_URL` | — | Testing only: the openRAG server `scripts/producer.py` writes in the messages it publishes (the consumer reads it from each message) |
+| `PRODUCER_TEST_API_KEY` | — | Testing only: the openRAG key `scripts/producer.py` writes in the messages, ignored by the consumer when `RAG_API_KEY` is set |
 | `CONCURRENCY` | `1` | Max messages processed in parallel |
 | `HTTP_TIMEOUT` | `60` | HTTP request timeout (seconds) |
 | `CALLBACK_TIMEOUT` | `5` | Timeout of a status callback to cozy-stack (seconds) |
@@ -90,7 +92,7 @@ Exposes `:8080/health` (RabbitMQ liveness) and `:8080/metrics` (Prometheus).
 
 ## Scripts
 
-- `scripts/producer.py` — CLI to publish upsert/delete messages to the exchange
+- `scripts/producer.py` — testing only: CLI that stands in for cozy-stack and publishes upsert/delete/sync messages to the exchange
 - `scripts/dlq_replay.py` — List and replay messages stuck in the DLQ
 
 ## Tests

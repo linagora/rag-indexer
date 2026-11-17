@@ -19,8 +19,8 @@ EXCHANGE_NAME = os.getenv("EXCHANGE_NAME", "rag.index.topic")
 # Main queue binds "rag.index.*"; retry queues dead-letter back on "rag.index.retry".
 ROUTING_KEY = os.getenv("ROUTING_KEY", "rag.index.file")
 
-RAG_BASE_URL = os.getenv("RAG_BASE_URL", "")
-RAG_API_KEY = os.getenv("RAG_API_KEY", "")
+PRODUCER_TEST_BASE_URL = os.getenv("PRODUCER_TEST_BASE_URL", "")
+PRODUCER_TEST_API_KEY = os.getenv("PRODUCER_TEST_API_KEY", "")
 
 
 def md5_of_bytes(data: bytes) -> str:
@@ -124,8 +124,8 @@ async def cmd_upsert_file(args: argparse.Namespace) -> None:
         action="upsert",
         partition=args.partition,
         file_id=args.file_id,
-        rag_base_url=args.rag_base_url or RAG_BASE_URL,
-        rag_api_key=args.rag_api_key or RAG_API_KEY,
+        rag_base_url=args.rag_base_url or PRODUCER_TEST_BASE_URL,
+        rag_api_key=args.rag_api_key or PRODUCER_TEST_API_KEY,
         doctype=args.doctype,
         doc_rev=args.doc_rev,
         md5sum=md5sum,
@@ -151,8 +151,8 @@ async def cmd_upsert_url(args: argparse.Namespace) -> None:
         action="upsert",
         partition=args.partition,
         file_id=args.file_id,
-        rag_base_url=args.rag_base_url or RAG_BASE_URL,
-        rag_api_key=args.rag_api_key or RAG_API_KEY,
+        rag_base_url=args.rag_base_url or PRODUCER_TEST_BASE_URL,
+        rag_api_key=args.rag_api_key or PRODUCER_TEST_API_KEY,
         doctype=args.doctype,
         doc_rev=args.doc_rev,
         md5sum=args.md5sum,
@@ -172,8 +172,8 @@ async def cmd_delete(args: argparse.Namespace) -> None:
         action="delete",
         partition=args.partition,
         file_id=args.file_id,
-        rag_base_url=args.rag_base_url or RAG_BASE_URL,
-        rag_api_key=args.rag_api_key or RAG_API_KEY,
+        rag_base_url=args.rag_base_url or PRODUCER_TEST_BASE_URL,
+        rag_api_key=args.rag_api_key or PRODUCER_TEST_API_KEY,
         callback_url=args.callback_url,
     )
     await publish_message(routing_key=args.routing_key, fields=fields)
@@ -185,8 +185,8 @@ async def cmd_sync(args: argparse.Namespace) -> None:
         action="sync",
         partition=args.partition,
         file_id=args.file_id,
-        rag_base_url=args.rag_base_url or RAG_BASE_URL,
-        rag_api_key=args.rag_api_key or RAG_API_KEY,
+        rag_base_url=args.rag_base_url or PRODUCER_TEST_BASE_URL,
+        rag_api_key=args.rag_api_key or PRODUCER_TEST_API_KEY,
         doc_rev=args.doc_rev,
         callback_url=args.callback_url,
     )
@@ -198,7 +198,7 @@ async def cmd_sync(args: argparse.Namespace) -> None:
 
 def make_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        description="RAG indexer producer (compatible with the aio-pika consumer)."
+        description="Test producer: publishes the messages cozy-stack sends, to try the consumer by hand."
     )
     p.add_argument(
         "--routing-key",
@@ -207,8 +207,8 @@ def make_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--partition", required=True, help="User/tenant partition")
     p.add_argument("--file-id", required=True, help="Logical file identifier")
-    p.add_argument("--rag-base-url", help="Override RAG base URL (fallback: RAG_BASE_URL)")
-    p.add_argument("--rag-api-key", help="Override RAG API key (fallback: RAG_API_KEY)")
+    p.add_argument("--rag-base-url", help="Override RAG base URL (fallback: PRODUCER_TEST_BASE_URL)")
+    p.add_argument("--rag-api-key", help="Override RAG API key (fallback: PRODUCER_TEST_API_KEY)")
     p.add_argument("--doctype", help="Document type (optional)")
     p.add_argument(
         "--doc-rev",
