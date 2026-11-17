@@ -45,6 +45,7 @@ Producer -> RabbitMQ (topic exchange) -> rag-indexer -> RAG API
 - A `sync` carries no file state: it is read on `state_url` when the message is processed (404: delete), so a retried message cannot undo a newer one. Its `workspace_ids` set the file's memberships on openRAG.
 - The openRAG server comes per-message (`rag_base_url`), its API key from `RAG_API_KEY`. `RAG_BASE_URL` is the one server the consumer may call: a message for another goes to the DLQ. Without them, the key is read from the message (`rag_api_key`), the format of the older producers.
 - Retry count is derived from `x-death` header entries with `reason=expired`, not a custom counter.
+- An upsert checks the extension of the name against the formats openRAG indexes (`GET /indexer/supported/types`, cached 5 minutes per server) before any download: an unsupported one is acked and reported `notsupported`. When openRAG does not tell its formats, every file is sent.
 - Upsert is idempotent: skips indexing when the remote `md5sum` matches the message's.
 - `md5sum` identifies the content, `doc_rev` orders the status callbacks on the cozy side: the two never stand in for each other.
 - Quorum queues for main queue and DLQ; classic queues for TTL retry delays.

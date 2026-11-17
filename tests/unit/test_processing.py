@@ -9,6 +9,14 @@ from rag_indexer.errors import TransientError, FatalError
 from tests.conftest import FakeResp, DummyMessage
 
 
+@pytest.fixture(autouse=True)
+def formats_unknown(monkeypatch):
+    """The session is a stub: openRAG does not tell its formats, every file is sent."""
+    async def no_formats(session, rag):
+        return None
+    monkeypatch.setattr(rag_client, "supported_extensions", no_formats)
+
+
 # ------------------------
 # Tests next_retry_queue
 # ------------------------

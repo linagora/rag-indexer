@@ -1,6 +1,7 @@
 import asyncio
 import json
 import tempfile
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -50,6 +51,56 @@ async def rag_delete(
     ) as resp:
         text = await resp.text()
         return RagResponse(status=resp.status, text=text)
+
+
+# The formats openRAG indexes, per server: read again after a few minutes, its
+# config can change.
+_SUPPORTED_TYPES_TTL = 300
+_supported_extensions: dict[str, tuple[float, frozenset[str] | None]] = {}
+
+
+def file_extension(name: str) -> str:
+    """Mirrors how openRAG reads the extension of a name."""
+    _, dot, ext = name.rpartition(".")
+    return ext.lower() if dot else ""
+
+
+async def supported_extensions(session: aiohttp.ClientSession, rag: RagConn) -> frozenset[str] | None:
+    """The extensions openRAG indexes, or None when it does not tell: every file is then sent.
+
+    A None is cached too: an openRAG without the route, or a slow one, must not cost
+    every message an extra request, up to HTTP_TIMEOUT.
+    """
+    cached = _supported_extensions.get(rag.base_url)
+    if cached and cached[0] > time.monotonic():
+        return cached[1]
+    extensions = await _fetch_supported_extensions(session, rag)
+    _supported_extensions[rag.base_url] = (time.monotonic() + _SUPPORTED_TYPES_TTL, extensions)
+    return extensions
+
+
+async def _fetch_supported_extensions(session: aiohttp.ClientSession, rag: RagConn) -> frozenset[str] | None:
+    log.debug("rag_api_call", method="GET", endpoint="supported_types")
+    try:
+        async with session.get(
+            f"{rag.base_url}/indexer/supported/types",
+            headers={"Authorization": f"Bearer {rag.api_key}"},
+            timeout=HTTP_TIMEOUT,
+        ) as resp:
+            if resp.status != 200:
+                log.warning("rag_supported_types_unavailable", status=resp.status)
+                return None
+            body = await resp.json(content_type=None)
+        extensions = frozenset(ext.lower().removeprefix(".") for ext in body["extensions"])
+    except (aiohttp.ClientError, TimeoutError, ValueError, KeyError, TypeError, AttributeError) as e:
+        # An answer not shaped as documented is no answer.
+        log.warning("rag_supported_types_unavailable", error=str(e))
+        return None
+    if not extensions:
+        # An empty set would refuse every file: an unusable answer.
+        log.warning("rag_supported_types_unavailable", detail="no extension")
+        return None
+    return extensions
 
 
 def _check(what: str, status: int, text: str, tolerated: tuple[int, ...] = ()) -> None:
