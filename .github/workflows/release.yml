@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: version
+        run: |
+          set -euo pipefail
+          new=${GITHUB_REF_NAME#v}
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+            || { echo "::error::$GITHUB_REF_NAME is not on main"; exit 1; }
+          project=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          [ "$new" = "$project" ] \
+            || { echo "::error::$GITHUB_REF_NAME does not match pyproject.toml version $project"; exit 1; }
+          # "~" makes sort -V rank a pre-release below its release.
+          prev=$(git tag -l 'v[0-9]*' | grep -vxF "$GITHUB_REF_NAME" | sed 's/^v//; s/-/~/' | sort -V | tail -n1 || true)
+          key=${new/-/\~}
+          if [ -n "$prev" ]; then
+            top=$(printf '%s\n%s\n' "$prev" "$key" | sort -V | tail -n1)
+            if [ "$top" != "$key" ] || [ "$prev" = "$key" ]; then
+              echo "::error::$new is not greater than the previous release ${prev/\~/-}"
+              exit 1
+            fi
+          fi
+          echo "version=$new" >> "$GITHUB_OUTPUT"
+
+  check:
+    needs: [verify]
+    uses: ./.github/workflows/reusable-check.yml
+
+  publish:
+    needs: [verify, check]
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/reusable-image.yml
+    with:
+      push: true
+      version: ${{ needs.verify.outputs.version }}
+
+  release:
+    needs: [verify, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ needs.verify.outputs.version }}
+          prerelease: ${{ contains(needs.verify.outputs.version, '-') }}
+          generate_release_notes: true
