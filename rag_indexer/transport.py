@@ -62,6 +62,11 @@ def _file_metadata(metadata: dict) -> dict:
 # would hold their concurrency slot.
 _callback_tasks: set[asyncio.Task] = set()
 
+# cozy-stack answers 500 when two first statuses of an instance race to create its
+# status database: the next try finds it created.
+_CALLBACK_ATTEMPTS = 3
+_CALLBACK_RETRY_DELAY = 1.0
+
 
 async def _post_status_callback(
     session: aiohttp.ClientSession,
@@ -69,17 +74,22 @@ async def _post_status_callback(
     payload: dict,
     headers: dict | None,
 ) -> None:
-    try:
-        async with session.post(
-            callback_url, json=payload, headers=headers, timeout=CALLBACK_TIMEOUT
-        ) as resp:
-            resp.raise_for_status()
-        log.info("status_callback_sent", callback_url=callback_url)
-    except aiohttp.ClientResponseError as e:
-        # str(e) would carry the full callback_url past the log redaction.
-        log.warning("status_callback_failed", callback_url=callback_url, status=e.status)
-    except Exception as e:
-        log.warning("status_callback_failed", callback_url=callback_url, error=str(e))
+    for attempt in range(1, _CALLBACK_ATTEMPTS + 1):
+        try:
+            async with session.post(
+                callback_url, json=payload, headers=headers, timeout=CALLBACK_TIMEOUT
+            ) as resp:
+                status = resp.status
+            if status < 400:
+                log.info("status_callback_sent", callback_url=callback_url)
+                return
+            log.warning("status_callback_failed", callback_url=callback_url, status=status, attempt=attempt)
+            if status < 500:
+                return
+        except Exception as e:
+            log.warning("status_callback_failed", callback_url=callback_url, error=str(e), attempt=attempt)
+        if attempt < _CALLBACK_ATTEMPTS:
+            await asyncio.sleep(_CALLBACK_RETRY_DELAY * attempt)
 
 
 async def publish_to_retry(
@@ -166,7 +176,7 @@ def send_status_callback(session: aiohttp.ClientSession, metadata: dict, status:
 async def drain_status_callbacks() -> None:
     """Wait for the status callbacks still in flight, so that a shutdown keeps them.
 
-    Bounded: each one gives up after CALLBACK_TIMEOUT.
+    Bounded: each one gives up after _CALLBACK_ATTEMPTS tries of CALLBACK_TIMEOUT.
     """
     if _callback_tasks:
         await asyncio.wait(_callback_tasks)

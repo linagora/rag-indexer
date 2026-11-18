@@ -207,3 +207,44 @@ async def test_drain_status_callbacks_waits_for_pending_posts():
 
     await transport.drain_status_callbacks()
     assert posted == [True]
+
+
+@pytest.mark.asyncio
+async def test_status_callback_retried_after_server_error(monkeypatch):
+    """A 5xx from cozy-stack is tried again."""
+    monkeypatch.setattr(transport, "_CALLBACK_RETRY_DELAY", 0)
+
+    class _FlakySession(_FakeCallbackSession):
+        def __init__(self):
+            super().__init__()
+            self.statuses = [500, 200]
+            self.calls = 0
+
+        def post(self, url, json=None, headers=None, timeout=None):
+            self.calls += 1
+            return _FakeCallbackResp(self.statuses.pop(0))
+
+    session = _FlakySession()
+    metadata = {"partition": "p1", "file_id": "f1", "doc_rev": "3-abc", "callback_url": "https://cozy.example/cb"}
+    transport.send_status_callback(session, metadata, "notsupported")
+    await transport.drain_status_callbacks()
+
+    assert session.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_status_callback_not_retried_after_client_error(monkeypatch):
+    """A 4xx will not change on a second try."""
+    monkeypatch.setattr(transport, "_CALLBACK_RETRY_DELAY", 0)
+    calls = []
+
+    class _RefusingSession(_FakeCallbackSession):
+        def post(self, url, json=None, headers=None, timeout=None):
+            calls.append(url)
+            return _FakeCallbackResp(400)
+
+    metadata = {"partition": "p1", "file_id": "f1", "doc_rev": "3-abc", "callback_url": "https://cozy.example/cb"}
+    transport.send_status_callback(_RefusingSession(), metadata, "notsupported")
+    await transport.drain_status_callbacks()
+
+    assert len(calls) == 1
