@@ -14,3 +14,12 @@ permissions:
 jobs:
   check:
     uses: ./.github/workflows/reusable-check.yml
+
+  publish:
+    needs: [check]
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/reusable-image.yml
+    with:
+      push: true

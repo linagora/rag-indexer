@@ -16,3 +16,6 @@ permissions:
 jobs:
   check:
     uses: ./.github/workflows/reusable-check.yml
+
+  image:
+    uses: ./.github/workflows/reusable-image.yml
