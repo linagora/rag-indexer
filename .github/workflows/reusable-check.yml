@@ -1,34 +1,26 @@
-name: CI
+name: Check
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_call:
 
 permissions:
   contents: read
 
-env:
-  # Fail on a uv.lock out of date with pyproject.toml instead of relocking.
-  UV_LOCKED: 1
-  # Print why each skipped test was skipped.
-  PYTEST_ADDOPTS: -rs
-  # The Python of the Dockerfile.
-  UV_PYTHON: "3.12"
-
 jobs:
-  lint:
+  check:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Fail on a uv.lock out of date with pyproject.toml instead of relocking.
+      UV_LOCKED: 1
+      # The Python of the Dockerfile.
+      UV_PYTHON: "3.12"
+      # Print why each skipped test was skipped.
+      PYTEST_ADDOPTS: -rs
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - run: make lint
-
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.3
       # Integration tests start RabbitMQ through Docker, available on the runner.
       - run: make test-all
 
@@ -60,17 +52,17 @@ jobs:
       E2E_INDEXER_LOG: /tmp/e2e/indexer.log
       E2E_STACK_LOG: /tmp/e2e/stack.log
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: linagora/cozy-stack
           ref: ${{ env.COZY_STACK_REF }}
           path: cozy-stack
-      - uses: actions/setup-go@v7.1.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: cozy-stack/go.mod
           cache-dependency-path: cozy-stack/go.sum
-      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - run: mkdir -p /tmp/e2e && go build -C cozy-stack -o "$COZY_STACK_BIN" .
       - run: uv sync
       - name: Start openRAG stub and rag-indexer
@@ -116,7 +108,7 @@ jobs:
           "$COZY_STACK_BIN" instances add "$E2E_DOMAIN" --passphrase e2e --admin-port "$COZY_ADMIN_PORT"
       - run: python3 -I tests/e2e/cozy/scenarios.py
       - if: failure()
-        uses: actions/upload-artifact@v7.0.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-cozy-logs
           path: /tmp/e2e/*.log
