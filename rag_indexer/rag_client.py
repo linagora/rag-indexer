@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 import json
 import tempfile
 import time
@@ -8,7 +10,7 @@ import aiohttp
 import structlog
 from aiohttp import FormData
 
-from rag_indexer.config import HTTP_TIMEOUT
+from rag_indexer.config import HTTP_TIMEOUT, RAG_MAX_PENDING
 from rag_indexer.errors import FatalError, TransientError, UnsupportedError
 from rag_indexer.models import FileState, IndexMessage, RagConn
 
@@ -100,6 +102,70 @@ async def _fetch_supported_extensions(session: aiohttp.ClientSession, rag: RagCo
         log.warning("rag_supported_types_unavailable", detail="no extension")
         return None
     return extensions
+
+
+_PENDING_POLL_SECONDS = 1
+# Under RabbitMQ's consumer_timeout (30 minutes by default): past it, the broker
+# closes the channel of a message left unacked.
+_PENDING_WAIT_LIMIT = 20 * 60
+# One message checks at a time: those checking together would all see the same room.
+_admission = asyncio.Lock()
+# Messages let through whose upload is not done yet, so not in openRAG's count.
+_admitted = 0
+
+
+async def pending_tasks(session: aiohttp.ClientSession, rag: RagConn) -> int | None:
+    """The indexing tasks openRAG has queued or running, all users together; None when it
+    does not tell, a key without the admin role included.
+
+    An overloaded openRAG (429, 5xx, timeout) raises instead: it must not lift the limit.
+    """
+    log.debug("rag_api_call", method="GET", endpoint="queue_info")
+    try:
+        async with session.get(
+            f"{rag.base_url}/queue/info",
+            headers={"Authorization": f"Bearer {rag.api_key}"},
+            timeout=HTTP_TIMEOUT,
+        ) as resp:
+            if resp.status == 429 or resp.status >= 500:
+                raise TransientError(f"RAG queue/info {resp.status}")
+            if resp.status != 200:
+                log.warning("rag_pending_tasks_unavailable", status=resp.status)
+                return None
+            body = await resp.json(content_type=None)
+        return int(body["tasks"]["active"])
+    except (ValueError, KeyError, TypeError) as e:
+        log.warning("rag_pending_tasks_unavailable", error=str(e))
+        return None
+
+
+@contextlib.asynccontextmanager
+async def room_in_queue(session: aiohttp.ClientSession, rag: RagConn):
+    """Hold the message, unacked, until openRAG's tasks and the uploads under way are
+    under RAG_MAX_PENDING, then count it until the block ends.
+
+    The limit holds within one indexer process. When openRAG does not tell its count,
+    the message goes on.
+    """
+    global _admitted
+    if not RAG_MAX_PENDING:
+        yield
+        return
+    try:
+        async with asyncio.timeout(_PENDING_WAIT_LIMIT), _admission:
+            logged = False
+            while (pending := await pending_tasks(session, rag)) is not None and pending + _admitted >= RAG_MAX_PENDING:
+                if not logged:
+                    log.info("rag_queue_full", pending=pending, uploading=_admitted, limit=RAG_MAX_PENDING)
+                    logged = True
+                await asyncio.sleep(_PENDING_POLL_SECONDS)
+            _admitted += 1
+    except TimeoutError:
+        raise TransientError(f"no room in openRAG's indexing queue for {_PENDING_WAIT_LIMIT} s") from None
+    try:
+        yield
+    finally:
+        _admitted -= 1
 
 
 def _check(what: str, status: int, text: str, tolerated: tuple[int, ...] = ()) -> None:

@@ -1,3 +1,4 @@
+import contextlib
 import json
 
 import aio_pika
@@ -124,56 +125,60 @@ async def process_message(
             ),
         )
         log.debug("message_processing")
-        if msg.action == "sync":
-            msg = await resolve_sync(session, msg)
-        if msg.action == "delete":
-            resp = await rag_client.rag_delete(session, msg.rag, msg.partition, msg.file_id)
-            if 200 <= resp.status < 300 or resp.status == 404:
+        # Before the file state is read and the file downloaded: a message waiting for room
+        # holds nothing, and the state still holds when the upload leaves.
+        room = rag_client.room_in_queue(session, msg.rag) if msg.action in ("sync", "upsert") else contextlib.nullcontext()
+        async with room:
+            if msg.action == "sync":
+                msg = await resolve_sync(session, msg)
+            if msg.action == "delete":
+                resp = await rag_client.rag_delete(session, msg.rag, msg.partition, msg.file_id)
+                if 200 <= resp.status < 300 or resp.status == 404:
+                    return
+                if resp.status == 429 or resp.status >= 500:
+                    raise TransientError(f"RAG delete {resp.status}: {resp.text}")
+                raise FatalError(f"RAG delete {resp.status}: {resp.text}")
+
+            if msg.action == "upsert":
+                log.debug("rag_get_file", detail="checking indexed content")
+                resp = await rag_client.rag_get_file(session, msg.rag, msg.partition, msg.file_id)
+                if resp.status == 429 or resp.status >= 500:
+                    log.debug("rag_get_error", status=resp.status)
+                    raise TransientError(f"RAG GET {resp.status}: {resp.text}")
+
+                need_index = False
+                is_new = False
+                if resp.status == 200:
+                    doc = resp.json_data or {}
+                    doc_metadata = (doc.get("metadata") or {}) if isinstance(doc, dict) else {}
+                    # Deduplication is on the content, not on doc_rev: a rename or a move
+                    # bumps the revision without changing a byte of the file.
+                    # "version" is where the previous producer stored the md5sum.
+                    md5_remote = doc_metadata.get("md5sum") or doc_metadata.get("version")
+                    need_index = md5_remote != msg.md5sum
+                elif resp.status == 404:
+                    need_index = True
+                    is_new = True
+                else:
+                    raise FatalError(f"RAG GET {resp.status}: {resp.text}")
+
+                if not need_index:
+                    await sync_membership(session, msg)
+                    return
+
+                # Spares downloading a file openRAG would refuse with a 415. After the md5sum
+                # check: a file indexed before openRAG dropped its format still syncs its memberships.
+                extensions = await rag_client.supported_extensions(session, msg.rag)
+                ext = rag_client.file_extension(msg.name)
+                if extensions is not None and ext not in extensions:
+                    raise UnsupportedError(f"openRAG does not index the {ext or 'extensionless'} files")
+                await rag_client.rag_upsert(session, msg, is_new)
+                if not is_new:
+                    # A PUT re-embeds the content: make sure the memberships survived it.
+                    await sync_membership(session, msg)
                 return
-            if resp.status == 429 or resp.status >= 500:
-                raise TransientError(f"RAG delete {resp.status}: {resp.text}")
-            raise FatalError(f"RAG delete {resp.status}: {resp.text}")
-
-        if msg.action == "upsert":
-            log.debug("rag_get_file", detail="checking indexed content")
-            resp = await rag_client.rag_get_file(session, msg.rag, msg.partition, msg.file_id)
-            if resp.status == 429 or resp.status >= 500:
-                log.debug("rag_get_error", status=resp.status)
-                raise TransientError(f"RAG GET {resp.status}: {resp.text}")
-
-            need_index = False
-            is_new = False
-            if resp.status == 200:
-                doc = resp.json_data or {}
-                doc_metadata = (doc.get("metadata") or {}) if isinstance(doc, dict) else {}
-                # Deduplication is on the content, not on doc_rev: a rename or a move
-                # bumps the revision without changing a byte of the file.
-                # "version" is where the previous producer stored the md5sum.
-                md5_remote = doc_metadata.get("md5sum") or doc_metadata.get("version")
-                need_index = md5_remote != msg.md5sum
-            elif resp.status == 404:
-                need_index = True
-                is_new = True
             else:
-                raise FatalError(f"RAG GET {resp.status}: {resp.text}")
-
-            if not need_index:
-                await sync_membership(session, msg)
-                return
-
-            # Spares downloading a file openRAG would refuse with a 415. After the md5sum
-            # check: a file indexed before openRAG dropped its format still syncs its memberships.
-            extensions = await rag_client.supported_extensions(session, msg.rag)
-            ext = rag_client.file_extension(msg.name)
-            if extensions is not None and ext not in extensions:
-                raise UnsupportedError(f"openRAG does not index the {ext or 'extensionless'} files")
-            await rag_client.rag_upsert(session, msg, is_new)
-            if not is_new:
-                # A PUT re-embeds the content: make sure the memberships survived it.
-                await sync_membership(session, msg)
-            return
-        else:
-            raise FatalError(f"Unknown action: {msg.action}")
+                raise FatalError(f"Unknown action: {msg.action}")
 
     except TransientError:
         raise

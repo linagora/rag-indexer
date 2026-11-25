@@ -85,6 +85,10 @@ RAG_BASE_URL, RAG_API_KEY = parse_rag_server()
 
 CONCURRENCY = int(os.getenv("CONCURRENCY", "1"))
 
+# Indexing tasks openRAG may hold, queued or running, all users together, before
+# the messages wait for room. 0: no limit.
+RAG_MAX_PENDING = int(os.getenv("RAG_MAX_PENDING", "0"))
+
 _HTTP_TIMEOUT_SECONDS = int(os.getenv("HTTP_TIMEOUT", "60"))
 HTTP_TIMEOUT = aiohttp.ClientTimeout(total=_HTTP_TIMEOUT_SECONDS)
 
