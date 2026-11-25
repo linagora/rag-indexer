@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import signal
 import sys
 import time
@@ -29,6 +30,21 @@ from rag_indexer.transport import (
     shutdown_event,
     start_health_server,
 )
+
+
+@contextlib.asynccontextmanager
+async def settle(message: aio_pika.IncomingMessage):
+    """message.process() that gives back to the queue a message the shutdown cut short.
+
+    Rejected without requeue, it would be lost: the main queue has no dead-letter
+    exchange. Should the reject itself be cancelled, closing the channel requeues it.
+    """
+    async with message.process(ignore_processed=True, requeue=False):
+        try:
+            yield
+        except asyncio.CancelledError:
+            await message.reject(requeue=True)
+            raise
 
 
 async def main():
@@ -74,7 +90,7 @@ async def main():
                     )
                     log.info("message_received")
 
-                    async with message.process(ignore_processed=True, requeue=False):
+                    async with settle(message):
                         retry_count = get_retry_count(message)
                         start_time = time.monotonic()
 
