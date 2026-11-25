@@ -93,7 +93,8 @@ async def rag_stub():
 
     Yields (server, call_log, response_rules).
     - call_log: list of dicts recording each request received
-    - response_rules: dict (method, path) -> (status, payload) | callable(request)
+    - response_rules: dict (method, path) -> (status, payload) | callable(request),
+      sync or async
       Default response when no rule matches: 200 {"status": "ok"}
     """
     call_log = []
@@ -111,7 +112,8 @@ async def rag_stub():
         key = (request.method, request.path)
         if key in response_rules:
             rule = response_rules[key]
-            status, payload = rule(request) if callable(rule) else rule
+            result = rule(request) if callable(rule) else rule
+            status, payload = await result if asyncio.iscoroutine(result) else result
         else:
             status, payload = 200, {"status": "ok"}
 
@@ -325,4 +327,28 @@ async def test_unsupported_format_is_acked_and_reported(rabbitmq_url, monkeypatc
     callback = json.loads(next(c for c in call_log if c["path"] == "/cb")["body"])
     assert callback["status"] == "notsupported"
     assert callback["metadata"]["doc_rev"] == "1-abc"
+    assert await dlq.get(fail=False) is None
+
+
+async def test_shutdown_requeues_a_message_still_in_flight(rabbitmq_url, monkeypatch, rag_stub, rmq_channel, main_consumer):
+    """A message the shutdown drain cuts short goes back to the main queue, not lost."""
+    _, main_q, dlq = rmq_channel
+    server, call_log, response_rules = rag_stub
+    rag_base_url = str(server.make_url("")).rstrip("/")
+
+    async def hang(_req):
+        await asyncio.sleep(60)
+        return 404, {}
+
+    response_rules[("GET", "/partition/test-partition/file/e2e-shutdown-001")] = hang
+
+    await _publish(file_id="e2e-shutdown-001", name="shutdown.md", rag_base_url=rag_base_url)
+    await _poll(lambda: any(c["path"].endswith("e2e-shutdown-001") for c in call_log))
+
+    transport_mod.shutdown_event.set()
+    await asyncio.wait_for(main_consumer, timeout=20.0)
+
+    msg = await _consume_one(main_q, timeout=5.0)
+    assert json.loads(msg.body)["file_id"] == "e2e-shutdown-001"
+    await msg.ack()
     assert await dlq.get(fail=False) is None
