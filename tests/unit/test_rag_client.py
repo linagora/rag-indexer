@@ -1,9 +1,11 @@
+import asyncio
 import io
 import json
 
 import aiohttp
 import pytest
 
+from rag_indexer import rag_client
 from rag_indexer.errors import FatalError, TransientError, UnsupportedError
 from rag_indexer.models import ContentSpec, IndexMessage, RagConn
 from rag_indexer.rag_client import (
@@ -299,3 +301,114 @@ async def test_rag_upsert_415_is_unsupported():
     session = _CapturingSession(status=415, text='{"detail": "Unsupported file format: xyz"}')
     with pytest.raises(UnsupportedError):
         await rag_upsert(session, _upsert_msg(name="doc.xyz"), is_new=True)
+
+
+# ------------------------
+# Room in openRAG's indexing queue
+# ------------------------
+_RAG = RagConn(base_url="http://rag:8000", api_key="rag-key")
+
+
+class _QueueInfoSession:
+    def __init__(self, status: int, body: dict):
+        self.status = status
+        self._body = body
+        self.urls = []
+
+    def get(self, url, headers=None, timeout=None):
+        self.urls.append(url)
+        return self
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        pass
+
+    async def json(self, content_type=None):
+        return self._body
+
+
+@pytest.mark.asyncio
+async def test_pending_tasks_reads_queue_info():
+    session = _QueueInfoSession(200, {"workers": {"total_slots": 50}, "tasks": {"active": 42}})
+    assert await rag_client.pending_tasks(session, _RAG) == 42
+    assert session.urls == ["http://rag:8000/queue/info"]
+    assert await rag_client.pending_tasks(_QueueInfoSession(403, {"detail": "Admin privileges required"}), _RAG) is None
+    with pytest.raises(TransientError):
+        await rag_client.pending_tasks(_QueueInfoSession(503, {}), _RAG)
+
+
+@pytest.mark.asyncio
+async def test_room_in_queue_waits_until_openrag_has_room(monkeypatch):
+    counts = iter([60, 50, 49])
+    seen = []
+
+    async def pending(session, rag):
+        seen.append(n := next(counts))
+        return n
+
+    monkeypatch.setattr(rag_client, "RAG_MAX_PENDING", 50)
+    monkeypatch.setattr(rag_client, "_PENDING_POLL_SECONDS", 0)
+    monkeypatch.setattr(rag_client, "pending_tasks", pending)
+    async with rag_client.room_in_queue(None, _RAG):
+        assert rag_client._admitted == 1
+    assert seen == [60, 50, 49]
+    assert rag_client._admitted == 0
+
+
+@pytest.mark.asyncio
+async def test_room_in_queue_counts_the_uploads_under_way(monkeypatch):
+    """openRAG does not count an upload before it is done: the indexer must."""
+    async def empty(session, rag):
+        return 0
+
+    monkeypatch.setattr(rag_client, "RAG_MAX_PENDING", 1)
+    monkeypatch.setattr(rag_client, "_PENDING_POLL_SECONDS", 0)
+    monkeypatch.setattr(rag_client, "pending_tasks", empty)
+    order = []
+
+    async def upload(name, hold):
+        async with rag_client.room_in_queue(None, _RAG):
+            order.append(f"{name} in")
+            await hold.wait()
+            order.append(f"{name} out")
+
+    first_done = asyncio.Event()
+    first = asyncio.create_task(upload("first", first_done))
+    second = asyncio.create_task(upload("second", asyncio.Event()))
+    await asyncio.sleep(0.05)
+    assert order == ["first in"]
+    first_done.set()
+    await first
+    await asyncio.sleep(0.05)
+    assert order == ["first in", "first out", "second in"]
+    second.cancel()
+    await asyncio.gather(second, return_exceptions=True)
+    assert rag_client._admitted == 0
+
+
+@pytest.mark.asyncio
+async def test_room_in_queue_gives_up_after_the_limit(monkeypatch):
+    async def full(session, rag):
+        return 50
+
+    monkeypatch.setattr(rag_client, "RAG_MAX_PENDING", 50)
+    monkeypatch.setattr(rag_client, "_PENDING_POLL_SECONDS", 0.01)
+    monkeypatch.setattr(rag_client, "_PENDING_WAIT_LIMIT", 0.05)
+    monkeypatch.setattr(rag_client, "pending_tasks", full)
+    with pytest.raises(TransientError):
+        async with rag_client.room_in_queue(None, _RAG):
+            pass
+    assert rag_client._admitted == 0
+
+
+@pytest.mark.asyncio
+async def test_room_in_queue_goes_on_when_openrag_does_not_tell(monkeypatch):
+    async def unknown(session, rag):
+        return None
+
+    monkeypatch.setattr(rag_client, "RAG_MAX_PENDING", 50)
+    monkeypatch.setattr(rag_client, "pending_tasks", unknown)
+    async with rag_client.room_in_queue(None, _RAG):
+        pass

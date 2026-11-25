@@ -46,6 +46,7 @@ Producer -> RabbitMQ (topic exchange) -> rag-indexer -> RAG API
 - The openRAG server comes per-message (`rag_base_url`), its API key from `RAG_API_KEY`. `RAG_BASE_URL` is the one server the consumer may call: a message for another goes to the DLQ. Without them, the key is read from the message (`rag_api_key`), the format of the older producers.
 - Retry count is derived from `x-death` header entries with `reason=expired`, not a custom counter.
 - An upsert checks the extension of the name against the formats openRAG indexes (`GET /indexer/supported/types`, cached 5 minutes per server) before any download: an unsupported one is acked and reported `notsupported`. When openRAG does not tell its formats, every file is sent.
+- `CONCURRENCY` bounds the uploads, not the indexing: openRAG answers once the file is queued. With `RAG_MAX_PENDING`, a sync or an upsert first waits until openRAG holds fewer tasks (`GET /queue/info`, admin key), so the backlog stays in RabbitMQ.
 - Upsert is idempotent: skips indexing when the remote `md5sum` matches the message's.
 - `md5sum` identifies the content, `doc_rev` orders the status callbacks on the cozy side: the two never stand in for each other.
 - Quorum queues for main queue and DLQ; classic queues for TTL retry delays.

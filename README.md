@@ -40,6 +40,7 @@ All settings are via environment variables (see `env.example`):
 | `RAG_BASE_URL` | — | The openRAG server the consumer may call: a message for another server goes to the DLQ. Set it with `RAG_API_KEY`, or neither: the key is then read from the message (`rag_api_key`) |
 | `RAG_API_KEY` | — | The API key of `RAG_BASE_URL` |
 | `CONCURRENCY` | `1` | Max messages processed in parallel |
+| `RAG_MAX_PENDING` | `0` | Indexing tasks openRAG may hold, all users together (`GET /queue/info`, `tasks.active`: `RAG_API_KEY` must be an admin key) before a sync or an upsert waits for room, up to 20 minutes. `0`: no limit |
 | `HTTP_TIMEOUT` | `60` | HTTP request timeout (seconds) |
 | `CALLBACK_TIMEOUT` | `5` | Timeout of a status callback to cozy-stack (seconds) |
 | `RETRY_INTERVALS` | `30000,300000,3600000` | Comma-separated retry delays (ms) |
