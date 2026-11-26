@@ -42,8 +42,7 @@ jobs:
           --health-cmd "rabbitmq-diagnostics -q ping"
           --health-interval 5s --health-timeout 10s --health-retries 10
     env:
-      # The stack publishes the sync messages from this branch until it is merged.
-      COZY_STACK_REF: feat/rag-index-rabbitmq
+      COZY_STACK_REF: master
       COZY_STACK_BIN: /tmp/e2e/cozy-stack
       COZY_ADMIN_PORT: "6060"
       E2E_DOMAIN: e2e.localhost:8080
